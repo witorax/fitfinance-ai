@@ -21,9 +21,18 @@ Tu peux :
 - consulter, ajouter des transactions financieres et gerer des budgets
 
 Sois proactif : si l'utilisateur demande un plan, genere-le avec save_meal_plan ou save_workout_plan
-pour qu'il apparaisse dans son espace. Si l'utilisateur demande d'enregistrer quelque chose
+pour qu'il apparaisse dans son espace (les plans sportifs s'affichent sur la page Sport, les plans
+alimentaires sur la page Nutrition). Si l'utilisateur demande d'enregistrer quelque chose
 (seance, mesure, transaction, budget), utilise les outils pour le faire reellement, ne te contente pas de le decrire.
-Reponds toujours en francais, de maniere concise et actionnable.`;
+
+Sport et Nutrition sont deux sections distinctes mais liees : la depense energetique (calories_burned
+des seances, disponible via get_recent_data) doit influencer les plans alimentaires que tu generes
+(plus l'utilisateur est actif, plus ses apports caloriques peuvent etre ajustes a la hausse). Quand tu
+generes un plan alimentaire, appelle get_recent_data pour prendre en compte cette depense energetique
+recente et mentionne brievement comment tu en as tenu compte.
+
+Formate tes reponses et tes plans en Markdown clair (titres avec #, listes, **gras**, tableaux si utile)
+pour un bon rendu visuel. Reponds toujours en francais, de maniere concise et actionnable.`;
 
 const tools = [
   {
@@ -58,6 +67,7 @@ const tools = [
         date: { type: "string", description: "Date au format YYYY-MM-DD" },
         name: { type: "string", description: "Nom de la seance, ex: Push day" },
         notes: { type: "string", description: "Details des exercices (sets/reps/poids)" },
+        calories_burned: { type: "number", description: "Estimation des calories brulees pendant la seance" },
       },
       required: ["date", "name"],
     },
@@ -165,13 +175,22 @@ module.exports = async (req, res) => {
         startOfMonth.setDate(1);
         const startStr = startOfMonth.toISOString().slice(0, 10);
 
-        const [{ data: metrics }, { data: workouts }, { data: transactions }, { data: budgets }] = await Promise.all([
+        const startOfWeek = new Date();
+        const day = (startOfWeek.getDay() + 6) % 7; // lundi = 0
+        startOfWeek.setDate(startOfWeek.getDate() - day);
+        const weekStr = startOfWeek.toISOString().slice(0, 10);
+
+        const [{ data: metrics }, { data: workouts }, { data: weekWorkouts }, { data: transactions }, { data: budgets }] = await Promise.all([
           supabase.from("body_metrics").select("*").eq("user_id", userId).order("date", { ascending: false }).limit(5),
           supabase.from("workouts").select("*").eq("user_id", userId).order("date", { ascending: false }).limit(5),
+          supabase.from("workouts").select("calories_burned").eq("user_id", userId).gte("date", weekStr),
           supabase.from("finance_transactions").select("*").eq("user_id", userId).gte("date", startStr).order("date", { ascending: false }),
           supabase.from("finance_budgets").select("*").eq("user_id", userId),
         ]);
-        return { metrics, workouts, transactions, budgets };
+
+        const calories_burned_this_week = (weekWorkouts || []).reduce((s, w) => s + (Number(w.calories_burned) || 0), 0);
+
+        return { metrics, workouts, calories_burned_this_week, transactions, budgets };
       }
       case "add_body_metric": {
         const { error } = await supabase.from("body_metrics").insert({
@@ -188,6 +207,7 @@ module.exports = async (req, res) => {
           date: input.date,
           name: input.name,
           notes: input.notes ?? null,
+          calories_burned: input.calories_burned ?? null,
         });
         return error ? { error: error.message } : { success: true };
       }

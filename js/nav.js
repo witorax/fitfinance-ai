@@ -11,6 +11,7 @@ async function requireAuthAndRenderNav(activePage) {
   const links = [
     { href: "dashboard.html", label: "Dashboard" },
     { href: "sport.html", label: "Sport" },
+    { href: "nutrition.html", label: "Nutrition" },
     { href: "finance.html", label: "Finance" },
     { href: "coach.html", label: "Coach IA" },
   ];

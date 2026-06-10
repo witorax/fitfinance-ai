@@ -9,6 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -31,6 +33,7 @@
 
   <script src="js/config.js"></script>
   <script src="js/nav.js"></script>
+  <script src="js/markdown.js"></script>
   <script>
     let userId, accessToken;
     const history = [];
@@ -39,10 +42,18 @@
       const win = document.getElementById("chat-window");
       const div = document.createElement("div");
       div.className = "chat-msg " + role;
-      div.textContent = content;
+      setMessageContent(div, role, content);
       win.appendChild(div);
       win.scrollTop = win.scrollHeight;
       return div;
+    }
+
+    function setMessageContent(div, role, content) {
+      if (role === "assistant") {
+        div.innerHTML = `<div class="markdown-content">${renderMarkdown(content)}</div>`;
+      } else {
+        div.textContent = content;
+      }
     }
 
     async function loadHistory() {
@@ -73,7 +84,11 @@
       input.value = "";
       sendBtn.disabled = true;
 
-      const thinkingEl = appendMessage("assistant", "...");
+      const thinkingEl = document.createElement("div");
+      thinkingEl.className = "chat-msg assistant";
+      thinkingEl.textContent = "...";
+      document.getElementById("chat-window").appendChild(thinkingEl);
+      document.getElementById("chat-window").scrollTop = document.getElementById("chat-window").scrollHeight;
 
       try {
         const res = await fetch("/api/ai-chat", {
@@ -91,7 +106,8 @@
         }
 
         const data = await res.json();
-        thinkingEl.textContent = data.reply;
+        setMessageContent(thinkingEl, "assistant", data.reply);
+        document.getElementById("chat-window").scrollTop = document.getElementById("chat-window").scrollHeight;
         history.push({ role: "assistant", content: data.reply });
       } catch (err) {
         thinkingEl.remove();

@@ -264,6 +264,110 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
 .chat-input-row { display: flex; gap: 10px; }
 .chat-input-row textarea { margin-bottom: 0; resize: none; }
 
+/* Cartes de liaison entre sections (Sport <-> Nutrition) */
+.link-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  transition: transform .15s, border-color .15s;
+}
+.link-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.link-card .icon {
+  font-size: 26px;
+  width: 52px; height: 52px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--gradient);
+  flex-shrink: 0;
+}
+.link-card .text strong { display: block; font-size: 15px; }
+.link-card .text span { color: var(--text-dim); font-size: 13px; }
+
+/* Rendu Markdown des plans / reponses IA */
+.markdown-content {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  -webkit-text-fill-color: var(--text);
+  background: none;
+  margin: 20px 0 10px;
+  letter-spacing: -0.01em;
+}
+.markdown-content h1 { font-size: 22px; }
+.markdown-content h2 {
+  font-size: 18px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.markdown-content h3 { font-size: 15px; color: var(--accent-2); }
+.markdown-content h1:first-child,
+.markdown-content h2:first-child,
+.markdown-content h3:first-child { margin-top: 0; }
+.markdown-content p { margin: 8px 0; }
+.markdown-content ul, .markdown-content ol { margin: 8px 0; padding-left: 22px; }
+.markdown-content li { margin: 4px 0; }
+.markdown-content li::marker { color: var(--accent-2); }
+.markdown-content strong { color: #fff; font-weight: 700; }
+.markdown-content hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border) 50%, transparent);
+  margin: 18px 0;
+}
+.markdown-content code {
+  background: rgba(255,255,255,0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.markdown-content blockquote {
+  margin: 10px 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--text-dim);
+}
+.markdown-content table { margin: 10px 0; }
+.markdown-content a { color: var(--accent-2); }
+
+.plan-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.plan-card .plan-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plan-card .plan-meta .badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--gradient);
+  color: white;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

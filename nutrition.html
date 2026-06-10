@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nutrition - FitFinance AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🍽️ Nutrition</h1>
+    <p class="subtitle">Tes plans alimentaires generes par le Coach IA, ajustes selon ton objectif et ta depense energetique.</p>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="value" id="stat-calories-burned">--</div>
+        <div class="label">Kcal brulees cette semaine</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stat-goal">--</div>
+        <div class="label">Objectif actuel</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stat-plans">--</div>
+        <div class="label">Plans alimentaires</div>
+      </div>
+    </div>
+
+    <a href="sport.html" class="link-card" style="margin-bottom: 24px;">
+      <div class="icon">📊</div>
+      <div class="text">
+        <strong>Voir mon suivi sportif</strong>
+        <span>Plus tu es actif, plus le Coach IA peut adapter tes apports caloriques en consequence.</span>
+      </div>
+    </a>
+
+    <div class="card">
+      <h2>Plans alimentaires generes par l'IA</h2>
+      <p class="subtitle">
+        Va sur la page <a href="coach.html">Coach IA</a> et demande par exemple :
+        "Genere-moi un plan alimentaire adapte a ma depense energetique de la semaine".
+      </p>
+      <div id="plans-list"></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/markdown.js"></script>
+  <script>
+    let userId;
+
+    function fmtDate(d) {
+      return new Date(d).toLocaleDateString("fr-FR");
+    }
+
+    function startOfWeekStr() {
+      const d = new Date();
+      const day = (d.getDay() + 6) % 7; // lundi = 0
+      d.setDate(d.getDate() - day);
+      d.setHours(0, 0, 0, 0);
+      return d.toISOString().slice(0, 10);
+    }
+
+    async function loadStats() {
+      const { data: workouts } = await supabaseClient
+        .from("workouts")
+        .select("calories_burned")
+        .eq("user_id", userId)
+        .gte("date", startOfWeekStr());
+
+      const totalCalories = (workouts || []).reduce((s, w) => s + (Number(w.calories_burned) || 0), 0);
+      document.getElementById("stat-calories-burned").textContent = totalCalories || "--";
+
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("goal")
+        .eq("id", userId)
+        .single();
+      document.getElementById("stat-goal").textContent = profile?.goal || "--";
+    }
+
+    async function loadPlans() {
+      const { data } = await supabaseClient
+        .from("meal_plans")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      document.getElementById("stat-plans").textContent = (data || []).length;
+
+      document.getElementById("plans-list").innerHTML = (data || []).length
+        ? data.map(p => `
+          <div class="plan-card">
+            <div class="plan-meta">
+              <span class="badge">${p.goal || "Plan alimentaire"}</span>
+              <span class="subtitle">${fmtDate(p.created_at)}</span>
+            </div>
+            ${p.title ? `<h3 style="margin-top:0;">${p.title}</h3>` : ""}
+            <div class="markdown-content">${renderMarkdown(typeof p.content === "string" ? p.content : JSON.stringify(p.content, null, 2))}</div>
+          </div>
+        `).join("")
+        : `<p class="subtitle">Aucun plan alimentaire genere pour le moment.</p>`;
+    }
+
+    (async () => {
+      const session = await requireAuthAndRenderNav("nutrition.html");
+      if (!session) return;
+      userId = session.user.id;
+
+      loadStats();
+      loadPlans();
+    })();
+  </script>
+</body>
+</html>

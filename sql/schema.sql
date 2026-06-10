@@ -32,6 +32,7 @@ create table if not exists workouts (
   date date not null default current_date,
   name text,
   notes text,
+  calories_burned numeric,
   created_at timestamptz default now()
 );
 
