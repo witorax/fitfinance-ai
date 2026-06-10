@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard - FitFinance AI</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Bonjour 👋</h1>
+    <p class="subtitle" id="goal-line">Chargement de ton profil...</p>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="value" id="stat-weight">--</div>
+        <div class="label">Poids actuel (kg)</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stat-workouts">--</div>
+        <div class="label">Seances ce mois-ci</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stat-balance">--</div>
+        <div class="label">Solde du mois (€)</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 20px;">
+      <h2>Objectif physique</h2>
+      <p class="subtitle">Defini ton objectif pour que le Coach IA puisse generer des plans adaptes.</p>
+      <form id="goal-form">
+        <div class="row">
+          <div>
+            <label for="goal">Objectif</label>
+            <select id="goal">
+              <option value="perte de poids">Perte de poids</option>
+              <option value="prise de masse">Prise de masse</option>
+              <option value="maintien">Maintien / forme generale</option>
+              <option value="endurance">Endurance</option>
+            </select>
+          </div>
+          <div>
+            <label for="activity_level">Niveau d'activite</label>
+            <select id="activity_level">
+              <option value="sedentaire">Sedentaire</option>
+              <option value="modere">Modere</option>
+              <option value="actif">Actif</option>
+              <option value="tres actif">Tres actif</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="height_cm">Taille (cm)</label>
+            <input type="number" id="height_cm" placeholder="175" />
+          </div>
+          <div>
+            <label for="age">Age</label>
+            <input type="number" id="age" placeholder="30" />
+          </div>
+        </div>
+        <button type="submit">Enregistrer</button>
+        <span id="save-msg"></span>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Acces rapide</h2>
+      <div class="row">
+        <a class="btn" href="sport.html" style="text-align:center; text-decoration:none;">📊 Suivi sportif</a>
+        <a class="btn" href="finance.html" style="text-align:center; text-decoration:none;">💰 Finances</a>
+        <a class="btn" href="coach.html" style="text-align:center; text-decoration:none;">🤖 Coach IA</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    (async () => {
+      const session = await requireAuthAndRenderNav("dashboard.html");
+      if (!session) return;
+      const userId = session.user.id;
+
+      // Charger profil
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+
+      if (profile) {
+        document.getElementById("goal-line").textContent =
+          profile.goal ? `Objectif actuel : ${profile.goal}` : "Aucun objectif defini pour le moment.";
+        if (profile.goal) document.getElementById("goal").value = profile.goal;
+        if (profile.activity_level) document.getElementById("activity_level").value = profile.activity_level;
+        if (profile.height_cm) document.getElementById("height_cm").value = profile.height_cm;
+        if (profile.age) document.getElementById("age").value = profile.age;
+      }
+
+      // Dernier poids enregistre
+      const { data: lastMetric } = await supabaseClient
+        .from("body_metrics")
+        .select("weight_kg")
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      document.getElementById("stat-weight").textContent = lastMetric?.weight_kg ?? "--";
+
+      // Seances ce mois-ci
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      const startStr = startOfMonth.toISOString().slice(0, 10);
+      const { count: workoutCount } = await supabaseClient
+        .from("workouts")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .gte("date", startStr);
+      document.getElementById("stat-workouts").textContent = workoutCount ?? 0;
+
+      // Solde du mois (transactions)
+      const { data: transactions } = await supabaseClient
+        .from("finance_transactions")
+        .select("amount")
+        .eq("user_id", userId)
+        .gte("date", startStr);
+      const balance = (transactions || []).reduce((sum, t) => sum + Number(t.amount), 0);
+      const balanceEl = document.getElementById("stat-balance");
+      balanceEl.textContent = balance.toFixed(2);
+      balanceEl.className = "value " + (balance >= 0 ? "amount-positive" : "amount-negative");
+
+      // Sauvegarde du profil / objectif
+      document.getElementById("goal-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const saveMsg = document.getElementById("save-msg");
+        const { error } = await supabaseClient.from("profiles").upsert({
+          id: userId,
+          goal: document.getElementById("goal").value,
+          activity_level: document.getElementById("activity_level").value,
+          height_cm: document.getElementById("height_cm").value || null,
+          age: document.getElementById("age").value || null,
+        });
+        saveMsg.textContent = error ? "Erreur: " + error.message : "Enregistre ✓";
+        saveMsg.className = error ? "error" : "success";
+        if (!error) {
+          document.getElementById("goal-line").textContent = `Objectif actuel : ${document.getElementById("goal").value}`;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

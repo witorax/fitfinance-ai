@@ -1,0 +1,10 @@
+{
+  "name": "fitfinance-ai",
+  "version": "1.0.0",
+  "description": "Application sport, alimentation et finances pilotee par IA (Supabase + Netlify + Claude)",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}

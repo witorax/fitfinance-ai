@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sport - FitFinance AI</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 Suivi sportif</h1>
+
+    <div class="card">
+      <h2>Ajouter une mesure</h2>
+      <form id="metric-form">
+        <div class="row">
+          <div>
+            <label for="m_date">Date</label>
+            <input type="date" id="m_date" required />
+          </div>
+          <div>
+            <label for="m_weight">Poids (kg)</label>
+            <input type="number" step="0.1" id="m_weight" placeholder="75.5" />
+          </div>
+          <div>
+            <label for="m_fat">Masse grasse (%)</label>
+            <input type="number" step="0.1" id="m_fat" placeholder="18" />
+          </div>
+        </div>
+        <button type="submit">Ajouter</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Historique des mesures</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Poids (kg)</th><th>Masse grasse (%)</th><th></th></tr></thead>
+        <tbody id="metrics-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Ajouter une seance</h2>
+      <form id="workout-form">
+        <div class="row">
+          <div>
+            <label for="w_date">Date</label>
+            <input type="date" id="w_date" required />
+          </div>
+          <div>
+            <label for="w_name">Nom de la seance</label>
+            <input type="text" id="w_name" placeholder="Push day, Cardio..." required />
+          </div>
+        </div>
+        <label for="w_notes">Notes / exercices</label>
+        <textarea id="w_notes" rows="3" placeholder="Developpe couche 4x8 @60kg, squats 3x10..."></textarea>
+        <button type="submit">Ajouter la seance</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Seances recentes</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Nom</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="workouts-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>🍽️ Plans generes par l'IA</h2>
+      <p class="subtitle">Va sur la page <a href="coach.html">Coach IA</a> pour generer un plan alimentaire ou sportif personnalise.</p>
+      <div id="plans-list"></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    let userId;
+
+    function fmtDate(d) {
+      return new Date(d).toLocaleDateString("fr-FR");
+    }
+
+    async function loadMetrics() {
+      const { data } = await supabaseClient
+        .from("body_metrics")
+        .select("*")
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
+        .limit(30);
+
+      document.getElementById("metrics-body").innerHTML = (data || []).map(m => `
+        <tr>
+          <td>${fmtDate(m.date)}</td>
+          <td>${m.weight_kg ?? "-"}</td>
+          <td>${m.body_fat_pct ?? "-"}</td>
+          <td><button class="secondary" data-del-metric="${m.id}">Suppr.</button></td>
+        </tr>
+      `).join("") || `<tr><td colspan="4">Aucune mesure pour le moment.</td></tr>`;
+
+      document.querySelectorAll("[data-del-metric]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          await supabaseClient.from("body_metrics").delete().eq("id", btn.dataset.delMetric);
+          loadMetrics();
+        });
+      });
+    }
+
+    async function loadWorkouts() {
+      const { data } = await supabaseClient
+        .from("workouts")
+        .select("*")
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
+        .limit(30);
+
+      document.getElementById("workouts-body").innerHTML = (data || []).map(w => `
+        <tr>
+          <td>${fmtDate(w.date)}</td>
+          <td>${w.name ?? "-"}</td>
+          <td>${w.notes ?? "-"}</td>
+          <td><button class="secondary" data-del-workout="${w.id}">Suppr.</button></td>
+        </tr>
+      `).join("") || `<tr><td colspan="4">Aucune seance pour le moment.</td></tr>`;
+
+      document.querySelectorAll("[data-del-workout]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          await supabaseClient.from("workouts").delete().eq("id", btn.dataset.delWorkout);
+          loadWorkouts();
+        });
+      });
+    }
+
+    async function loadPlans() {
+      const { data } = await supabaseClient
+        .from("workout_plans")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      const { data: meals } = await supabaseClient
+        .from("meal_plans")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      const all = [...(data || []).map(p => ({ ...p, type: "Plan sportif" })), ...(meals || []).map(p => ({ ...p, type: "Plan alimentaire" }))]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      document.getElementById("plans-list").innerHTML = all.length
+        ? all.map(p => `
+          <div class="card" style="background: var(--surface-2); margin-bottom: 8px;">
+            <strong>${p.type}</strong> - ${p.title || "Sans titre"} <span class="subtitle">(${fmtDate(p.created_at)})</span>
+            <pre style="white-space: pre-wrap; margin-top:8px;">${typeof p.content === "string" ? p.content : JSON.stringify(p.content, null, 2)}</pre>
+          </div>
+        `).join("")
+        : `<p class="subtitle">Aucun plan genere pour le moment.</p>`;
+    }
+
+    (async () => {
+      const session = await requireAuthAndRenderNav("sport.html");
+      if (!session) return;
+      userId = session.user.id;
+
+      document.getElementById("m_date").valueAsDate = new Date();
+      document.getElementById("w_date").valueAsDate = new Date();
+
+      document.getElementById("metric-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await supabaseClient.from("body_metrics").insert({
+          user_id: userId,
+          date: document.getElementById("m_date").value,
+          weight_kg: document.getElementById("m_weight").value || null,
+          body_fat_pct: document.getElementById("m_fat").value || null,
+        });
+        e.target.reset();
+        document.getElementById("m_date").valueAsDate = new Date();
+        loadMetrics();
+      });
+
+      document.getElementById("workout-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await supabaseClient.from("workouts").insert({
+          user_id: userId,
+          date: document.getElementById("w_date").value,
+          name: document.getElementById("w_name").value,
+          notes: document.getElementById("w_notes").value,
+        });
+        e.target.reset();
+        document.getElementById("w_date").valueAsDate = new Date();
+        loadWorkouts();
+      });
+
+      loadMetrics();
+      loadWorkouts();
+      loadPlans();
+    })();
+  </script>
+</body>
+</html>

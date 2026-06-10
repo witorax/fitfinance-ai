@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finance - FitFinance AI</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>💰 Finances</h1>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="value amount-positive" id="stat-income">--</div>
+        <div class="label">Revenus du mois (€)</div>
+      </div>
+      <div class="stat-card">
+        <div class="value amount-negative" id="stat-expenses">--</div>
+        <div class="label">Depenses du mois (€)</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stat-balance">--</div>
+        <div class="label">Solde du mois (€)</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Ajouter une transaction</h2>
+      <form id="tx-form">
+        <div class="row">
+          <div>
+            <label for="t_date">Date</label>
+            <input type="date" id="t_date" required />
+          </div>
+          <div>
+            <label for="t_category">Categorie</label>
+            <input type="text" id="t_category" placeholder="Loyer, Salaire, Courses..." required />
+          </div>
+          <div>
+            <label for="t_amount">Montant (€)</label>
+            <input type="number" step="0.01" id="t_amount" placeholder="-50 ou 1500" required />
+          </div>
+        </div>
+        <label for="t_desc">Description</label>
+        <input type="text" id="t_desc" placeholder="Optionnel" />
+        <button type="submit">Ajouter</button>
+        <p class="subtitle">Astuce : utilise un montant negatif pour une depense, positif pour un revenu.</p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Transactions recentes</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Categorie</th><th>Description</th><th>Montant</th><th></th></tr></thead>
+        <tbody id="tx-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Budgets mensuels</h2>
+      <form id="budget-form">
+        <div class="row">
+          <div>
+            <label for="b_category">Categorie</label>
+            <input type="text" id="b_category" placeholder="Alimentation" required />
+          </div>
+          <div>
+            <label for="b_limit">Limite mensuelle (€)</label>
+            <input type="number" step="0.01" id="b_limit" placeholder="300" required />
+          </div>
+        </div>
+        <button type="submit">Definir</button>
+      </form>
+      <div id="budgets-list" style="margin-top: 12px;"></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    let userId;
+
+    function fmtDate(d) {
+      return new Date(d).toLocaleDateString("fr-FR");
+    }
+
+    function startOfMonthStr() {
+      const d = new Date();
+      d.setDate(1);
+      return d.toISOString().slice(0, 10);
+    }
+
+    async function loadTransactions() {
+      const { data } = await supabaseClient
+        .from("finance_transactions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
+        .limit(50);
+
+      document.getElementById("tx-body").innerHTML = (data || []).map(t => `
+        <tr>
+          <td>${fmtDate(t.date)}</td>
+          <td>${t.category}</td>
+          <td>${t.description ?? "-"}</td>
+          <td class="${Number(t.amount) >= 0 ? "amount-positive" : "amount-negative"}">${Number(t.amount).toFixed(2)} €</td>
+          <td><button class="secondary" data-del-tx="${t.id}">Suppr.</button></td>
+        </tr>
+      `).join("") || `<tr><td colspan="5">Aucune transaction pour le moment.</td></tr>`;
+
+      document.querySelectorAll("[data-del-tx]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          await supabaseClient.from("finance_transactions").delete().eq("id", btn.dataset.delTx);
+          loadTransactions();
+          loadStats();
+        });
+      });
+    }
+
+    async function loadStats() {
+      const { data } = await supabaseClient
+        .from("finance_transactions")
+        .select("amount")
+        .eq("user_id", userId)
+        .gte("date", startOfMonthStr());
+
+      const amounts = (data || []).map(t => Number(t.amount));
+      const income = amounts.filter(a => a > 0).reduce((s, a) => s + a, 0);
+      const expenses = amounts.filter(a => a < 0).reduce((s, a) => s + a, 0);
+      const balance = income + expenses;
+
+      document.getElementById("stat-income").textContent = income.toFixed(2);
+      document.getElementById("stat-expenses").textContent = expenses.toFixed(2);
+      const balEl = document.getElementById("stat-balance");
+      balEl.textContent = balance.toFixed(2);
+      balEl.className = "value " + (balance >= 0 ? "amount-positive" : "amount-negative");
+    }
+
+    async function loadBudgets() {
+      const { data: budgets } = await supabaseClient
+        .from("finance_budgets")
+        .select("*")
+        .eq("user_id", userId)
+        .order("category");
+
+      const { data: txs } = await supabaseClient
+        .from("finance_transactions")
+        .select("category, amount")
+        .eq("user_id", userId)
+        .gte("date", startOfMonthStr());
+
+      const spentByCategory = {};
+      (txs || []).forEach(t => {
+        if (Number(t.amount) < 0) {
+          spentByCategory[t.category] = (spentByCategory[t.category] || 0) + Math.abs(Number(t.amount));
+        }
+      });
+
+      document.getElementById("budgets-list").innerHTML = (budgets || []).map(b => {
+        const spent = spentByCategory[b.category] || 0;
+        const pct = Math.min(100, (spent / Number(b.monthly_limit)) * 100);
+        const over = spent > Number(b.monthly_limit);
+        return `
+          <div style="margin-bottom: 12px;">
+            <div style="display:flex; justify-content:space-between; font-size:14px;">
+              <span>${b.category}</span>
+              <span class="${over ? "amount-negative" : ""}">${spent.toFixed(2)} € / ${Number(b.monthly_limit).toFixed(2)} €</span>
+              <button class="secondary" data-del-budget="${b.id}" style="padding:2px 8px;">Suppr.</button>
+            </div>
+            <div style="background: var(--surface); border-radius: 6px; height: 8px; overflow:hidden; margin-top:4px;">
+              <div style="width:${pct}%; height:100%; background:${over ? "var(--danger)" : "var(--accent)"};"></div>
+            </div>
+          </div>
+        `;
+      }).join("") || `<p class="subtitle">Aucun budget defini.</p>`;
+
+      document.querySelectorAll("[data-del-budget]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          await supabaseClient.from("finance_budgets").delete().eq("id", btn.dataset.delBudget);
+          loadBudgets();
+        });
+      });
+    }
+
+    (async () => {
+      const session = await requireAuthAndRenderNav("finance.html");
+      if (!session) return;
+      userId = session.user.id;
+
+      document.getElementById("t_date").valueAsDate = new Date();
+
+      document.getElementById("tx-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await supabaseClient.from("finance_transactions").insert({
+          user_id: userId,
+          date: document.getElementById("t_date").value,
+          category: document.getElementById("t_category").value,
+          description: document.getElementById("t_desc").value || null,
+          amount: document.getElementById("t_amount").value,
+        });
+        e.target.reset();
+        document.getElementById("t_date").valueAsDate = new Date();
+        loadTransactions();
+        loadStats();
+        loadBudgets();
+      });
+
+      document.getElementById("budget-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await supabaseClient.from("finance_budgets").insert({
+          user_id: userId,
+          category: document.getElementById("b_category").value,
+          monthly_limit: document.getElementById("b_limit").value,
+        });
+        e.target.reset();
+        loadBudgets();
+      });
+
+      loadTransactions();
+      loadStats();
+      loadBudgets();
+    })();
+  </script>
+</body>
+</html>

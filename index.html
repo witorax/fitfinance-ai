@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FitFinance AI - Connexion</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="center-screen">
+    <div class="card" style="width: 100%; max-width: 400px;">
+      <h1>FitFinance AI</h1>
+      <p class="subtitle">Sport, alimentation et finances, pilotes par IA.</p>
+
+      <div id="message"></div>
+
+      <form id="auth-form">
+        <div id="name-field" style="display:none;">
+          <label for="full_name">Nom complet</label>
+          <input type="text" id="full_name" placeholder="Ton nom" />
+        </div>
+
+        <label for="email">Email</label>
+        <input type="email" id="email" required placeholder="toi@example.com" />
+
+        <label for="password">Mot de passe</label>
+        <input type="password" id="password" required placeholder="********" />
+
+        <button type="submit" id="submit-btn" style="width:100%;">Se connecter</button>
+      </form>
+
+      <p style="text-align:center; margin-top: 16px;">
+        <a href="#" id="toggle-mode">Pas encore de compte ? Cree-en un</a>
+      </p>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    let mode = "login"; // ou "signup"
+
+    const form = document.getElementById("auth-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const toggleLink = document.getElementById("toggle-mode");
+    const nameField = document.getElementById("name-field");
+    const messageEl = document.getElementById("message");
+
+    toggleLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      mode = mode === "login" ? "signup" : "login";
+      submitBtn.textContent = mode === "login" ? "Se connecter" : "Creer mon compte";
+      toggleLink.textContent = mode === "login"
+        ? "Pas encore de compte ? Cree-en un"
+        : "Deja un compte ? Connecte-toi";
+      nameField.style.display = mode === "signup" ? "block" : "none";
+      messageEl.innerHTML = "";
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      messageEl.innerHTML = "";
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      const fullName = document.getElementById("full_name").value.trim();
+
+      submitBtn.disabled = true;
+
+      try {
+        if (mode === "signup") {
+          const { error } = await supabaseClient.auth.signUp({
+            email,
+            password,
+            options: { data: { full_name: fullName } },
+          });
+          if (error) throw error;
+          messageEl.innerHTML = `<p class="success">Compte cree ! Verifie ta boite mail si une confirmation est requise, puis connecte-toi.</p>`;
+          mode = "login";
+          submitBtn.textContent = "Se connecter";
+          toggleLink.textContent = "Pas encore de compte ? Cree-en un";
+          nameField.style.display = "none";
+        } else {
+          const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          window.location.href = "dashboard.html";
+        }
+      } catch (err) {
+        messageEl.innerHTML = `<p class="error">${err.message}</p>`;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    // Si deja connecte, redirige vers le dashboard
+    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      if (session) window.location.href = "dashboard.html";
+    });
+  </script>
+</body>
+</html>

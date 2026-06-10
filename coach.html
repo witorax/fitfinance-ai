@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coach IA - FitFinance AI</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🤖 Coach IA</h1>
+    <p class="subtitle">
+      Ton coach a acces (lecture/ecriture) a tes donnees sport et finance. Tu peux lui demander par exemple :
+      "Genere-moi un plan alimentaire pour une perte de poids", "Ajoute une seance jambes pour aujourd'hui",
+      "Cree un budget de 300€ pour l'alimentation", "Resume mes finances du mois".
+    </p>
+
+    <div class="card">
+      <div class="chat-window" id="chat-window"></div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" rows="2" placeholder="Ecris ton message..."></textarea>
+        <button id="send-btn">Envoyer</button>
+      </div>
+      <p id="chat-error" class="error"></p>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    let userId, accessToken;
+    const history = [];
+
+    function appendMessage(role, content) {
+      const win = document.getElementById("chat-window");
+      const div = document.createElement("div");
+      div.className = "chat-msg " + role;
+      div.textContent = content;
+      win.appendChild(div);
+      win.scrollTop = win.scrollHeight;
+      return div;
+    }
+
+    async function loadHistory() {
+      const { data } = await supabaseClient
+        .from("ai_messages")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true })
+        .limit(50);
+
+      (data || []).forEach(m => {
+        appendMessage(m.role, m.content);
+        history.push({ role: m.role, content: m.content });
+      });
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById("chat-input");
+      const text = input.value.trim();
+      if (!text) return;
+
+      const sendBtn = document.getElementById("send-btn");
+      const errorEl = document.getElementById("chat-error");
+      errorEl.textContent = "";
+
+      appendMessage("user", text);
+      history.push({ role: "user", content: text });
+      input.value = "";
+      sendBtn.disabled = true;
+
+      const thinkingEl = appendMessage("assistant", "...");
+
+      try {
+        const res = await fetch("/.netlify/functions/ai-chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ messages: history }),
+        });
+
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error || `Erreur serveur (${res.status})`);
+        }
+
+        const data = await res.json();
+        thinkingEl.textContent = data.reply;
+        history.push({ role: "assistant", content: data.reply });
+      } catch (err) {
+        thinkingEl.remove();
+        errorEl.textContent = err.message;
+        history.pop(); // retire le message user en cas d'echec pour pouvoir reessayer
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    (async () => {
+      const session = await requireAuthAndRenderNav("coach.html");
+      if (!session) return;
+      userId = session.user.id;
+      accessToken = session.access_token;
+
+      await loadHistory();
+
+      document.getElementById("send-btn").addEventListener("click", sendMessage);
+      document.getElementById("chat-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
