@@ -80,6 +80,38 @@ L'utilisateur peut avoir des depenses/revenus recurrents (loyer, abonnements, sa
 set_recurring_transaction. Prends-les en compte (disponibles dans get_recent_data) quand tu analyses
 ses finances ou proposes un budget/objectif d'epargne.
 
+MEMOIRE ET SUIVI A LONG TERME :
+L'historique de conversation qui t'est transmis est limite (environ les dernieres 24h). Pour assurer un
+suivi reel sur la duree (entrainement et nutrition), NE COMPTE PAS sur l'historique du chat pour te
+souvenir des choses importantes : utilise plutot get_profile et get_recent_data, qui refletent l'etat
+actuel et persistant des donnees de l'utilisateur (programme actif, progression, repas, preferences,
+budget, etc.), et utilise update_preferences pour ENREGISTRER durablement toute information utile que
+l'utilisateur partage sur ses gouts, contraintes, horaires, objectifs ou habitudes (ex: "n'aime pas le
+brocoli", "prefere s'entrainer le matin", "allergique aux noix"). Au debut de chaque conversation ou
+quand c'est pertinent, consulte profile.preferences pour adapter tes reponses et tes plans.
+
+GESTION COMPLETE DES DONNEES (modifications, suppressions, reinitialisations) :
+L'utilisateur peut a tout moment te demander de modifier, supprimer ou reinitialiser des donnees dans
+n'importe quel tableau de l'application (sport, nutrition, finance, relations, calendrier). Utilise les
+outils appropries pour le faire REELLEMENT et tout est sauvegarde dans la base de donnees (persiste meme
+si l'application est fermee) :
+- delete_workout : supprime une ou des seances enregistrees
+- delete_body_metric : supprime une mesure corporelle
+- reset_training_program : desactive (ou supprime) le programme d'entrainement actif
+- reset_adherence_cycle : reinitialise le cycle d'assiduite de 30 jours
+- delete_transaction : supprime une transaction financiere
+- delete_calendar_event : supprime un evenement du calendrier
+- delete_contact : supprime un contact
+Si l'utilisateur demande un changement qui ne correspond a aucun outil precis (ex: changer un chiffre
+specifique d'un objectif), utilise set_nutrition_targets, set_budget, set_savings_goal ou
+update_preferences selon le cas.
+
+GESTION DES ERREURS D'OUTILS :
+Si un outil retourne un champ "error", NE DIS JAMAIS a l'utilisateur que l'action a reussi. Explique
+brievement le probleme, corrige les donnees si possible (ex: types de valeurs) et reessaie l'outil. Ne
+decris jamais une donnee comme "enregistree" ou "ajoutee au tableau" si l'outil correspondant n'a pas
+retourne success: true.
+
 Sois proactif : si l'utilisateur demande un programme/plan, genere-le avec les outils dedies pour qu'il
 apparaisse dans son espace (programmes sportifs sur la page Sport, plans/repas alimentaires sur la page
 Nutrition). Si l'utilisateur demande d'enregistrer quelque chose (seance, mesure, transaction, budget,
@@ -313,6 +345,88 @@ const tools = [
     },
   },
   {
+    name: "update_preferences",
+    description: "Met a jour les preferences/notes durables de l'utilisateur (gouts alimentaires, horaires d'entrainement, contraintes, allergies, objectifs, habitudes). Remplace le texte existant : inclus tout ce qui doit etre garde en memoire.",
+    input_schema: {
+      type: "object",
+      properties: {
+        preferences: { type: "string", description: "Texte libre resumant les preferences et infos importantes a retenir sur l'utilisateur" },
+      },
+      required: ["preferences"],
+    },
+  },
+  {
+    name: "delete_workout",
+    description: "Supprime une ou plusieurs seances de sport enregistrees, par date et/ou nom.",
+    input_schema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Date au format YYYY-MM-DD (optionnel)" },
+        name: { type: "string", description: "Nom de la seance (recherche approximative, optionnel)" },
+      },
+    },
+  },
+  {
+    name: "delete_body_metric",
+    description: "Supprime une mesure corporelle a une date donnee.",
+    input_schema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Date au format YYYY-MM-DD" },
+      },
+      required: ["date"],
+    },
+  },
+  {
+    name: "reset_training_program",
+    description: "Desactive le programme d'entrainement actif de l'utilisateur (ou le supprime completement si delete=true).",
+    input_schema: {
+      type: "object",
+      properties: {
+        delete: { type: "boolean", description: "Si true, supprime aussi le programme de la base de donnees" },
+      },
+    },
+  },
+  {
+    name: "reset_adherence_cycle",
+    description: "Reinitialise le cycle d'assiduite de 30 jours de l'utilisateur a partir d'aujourd'hui.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "delete_transaction",
+    description: "Supprime une transaction financiere correspondant aux criteres donnes (au moins un critere requis).",
+    input_schema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Date au format YYYY-MM-DD (optionnel)" },
+        category: { type: "string", description: "Categorie (optionnel)" },
+        description: { type: "string", description: "Description (recherche approximative, optionnel)" },
+      },
+    },
+  },
+  {
+    name: "delete_calendar_event",
+    description: "Supprime un ou des evenements du calendrier correspondant aux criteres donnes (au moins un critere requis).",
+    input_schema: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "Date au format YYYY-MM-DD (optionnel)" },
+        title: { type: "string", description: "Titre (recherche approximative, optionnel)" },
+      },
+    },
+  },
+  {
+    name: "delete_contact",
+    description: "Supprime un contact du suivi relationnel par son nom.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Nom du contact (recherche approximative)" },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "add_calendar_event",
     description: "Ajoute un evenement au calendrier de l'utilisateur (ex: planifier une seance de sport, un repas, un rappel).",
     input_schema: {
@@ -376,10 +490,14 @@ module.exports = async (req, res) => {
 
   const lastUserMessage = [...incomingMessages].reverse().find(m => m.role === "user");
 
-  // Ne garder que role/content (texte) pour l'historique envoye a Claude
+  // Ne garder que role/content (texte) pour l'historique envoye a Claude, et limiter sa taille
+  // (les donnees persistantes - programmes, repas, finances, preferences... - sont
+  // recuperees via les outils get_profile/get_recent_data, pas via l'historique du chat).
+  const MAX_HISTORY_MESSAGES = 20;
   const messages = incomingMessages
     .filter(m => m.role === "user" || m.role === "assistant")
-    .map(m => ({ role: m.role, content: m.content }));
+    .map(m => ({ role: m.role, content: m.content }))
+    .slice(-MAX_HISTORY_MESSAGES);
 
   function startOfWeekStr() {
     const d = new Date();
@@ -428,7 +546,7 @@ module.exports = async (req, res) => {
           supabase.from("contacts").select("*").eq("user_id", userId),
           supabase.from("finance_recurring").select("*").eq("user_id", userId),
           supabase.from("shopping_list_items").select("*").eq("user_id", userId).order("category"),
-          supabase.from("profiles").select("grocery_budget_weekly").eq("id", userId).maybeSingle(),
+          supabase.from("profiles").select("grocery_budget_weekly, preferences, adherence_cycle_start").eq("id", userId).maybeSingle(),
         ]);
 
         const calories_burned_this_week = (weekWorkouts || []).reduce((s, w) => s + (Number(w.calories_burned) || 0), 0);
@@ -499,6 +617,8 @@ module.exports = async (req, res) => {
           shopping_list: shoppingList,
           shopping_list_total,
           grocery_budget_weekly: profileData?.grocery_budget_weekly ?? 80,
+          preferences: profileData?.preferences ?? null,
+          adherence_cycle_start: profileData?.adherence_cycle_start ?? null,
         };
       }
       case "add_body_metric": {
@@ -521,17 +641,21 @@ module.exports = async (req, res) => {
         return error ? { error: error.message } : { success: true };
       }
       case "save_training_program": {
+        const durationWeeks = parseInt(input.duration_weeks, 10) || 8;
+        if (!Array.isArray(input.days) || input.days.length === 0) {
+          return { error: "Le champ 'days' doit etre un tableau non vide de jours d'entrainement." };
+        }
         await supabase.from("training_programs").update({ active: false }).eq("user_id", userId).eq("active", true);
         const { error } = await supabase.from("training_programs").insert({
           user_id: userId,
           title: input.title,
           goal: input.goal ?? null,
-          duration_weeks: input.duration_weeks,
+          duration_weeks: durationWeeks,
           start_date: new Date().toISOString().slice(0, 10),
           days: input.days,
           active: true,
         });
-        return error ? { error: error.message } : { success: true };
+        return error ? { error: error.message } : { success: true, title: input.title, duration_weeks: durationWeeks };
       }
       case "save_meal_plan": {
         const { error } = await supabase.from("meal_plans").insert({
@@ -711,6 +835,80 @@ module.exports = async (req, res) => {
           return error ? { error: error.message } : { success: true, created: true };
         }
       }
+      case "update_preferences": {
+        const { error } = await supabase.from("profiles").update({ preferences: input.preferences }).eq("id", userId);
+        return error ? { error: error.message } : { success: true };
+      }
+      case "delete_workout": {
+        if (!input.date && !input.name) return { error: "Precise au moins une date ou un nom de seance." };
+        let query = supabase.from("workouts").delete().eq("user_id", userId);
+        if (input.date) query = query.eq("date", input.date);
+        if (input.name) query = query.ilike("name", `%${input.name}%`);
+        const { error, count } = await query.select("id", { count: "exact" });
+        return error ? { error: error.message } : { success: true, deleted: count ?? 0 };
+      }
+      case "delete_body_metric": {
+        const { error, count } = await supabase
+          .from("body_metrics")
+          .delete()
+          .eq("user_id", userId)
+          .eq("date", input.date)
+          .select("id", { count: "exact" });
+        return error ? { error: error.message } : { success: true, deleted: count ?? 0 };
+      }
+      case "reset_training_program": {
+        if (input.delete) {
+          const { error, count } = await supabase
+            .from("training_programs")
+            .delete()
+            .eq("user_id", userId)
+            .eq("active", true)
+            .select("id", { count: "exact" });
+          return error ? { error: error.message } : { success: true, deleted: count ?? 0 };
+        }
+        const { error, count } = await supabase
+          .from("training_programs")
+          .update({ active: false })
+          .eq("user_id", userId)
+          .eq("active", true)
+          .select("id", { count: "exact" });
+        return error ? { error: error.message } : { success: true, deactivated: count ?? 0 };
+      }
+      case "reset_adherence_cycle": {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ adherence_cycle_start: new Date().toISOString().slice(0, 10) })
+          .eq("id", userId);
+        return error ? { error: error.message } : { success: true };
+      }
+      case "delete_transaction": {
+        if (!input.date && !input.category && !input.description) {
+          return { error: "Precise au moins une date, une categorie ou une description." };
+        }
+        let query = supabase.from("finance_transactions").delete().eq("user_id", userId);
+        if (input.date) query = query.eq("date", input.date);
+        if (input.category) query = query.eq("category", input.category);
+        if (input.description) query = query.ilike("description", `%${input.description}%`);
+        const { error, count } = await query.select("id", { count: "exact" });
+        return error ? { error: error.message } : { success: true, deleted: count ?? 0 };
+      }
+      case "delete_calendar_event": {
+        if (!input.date && !input.title) return { error: "Precise au moins une date ou un titre." };
+        let query = supabase.from("calendar_events").delete().eq("user_id", userId);
+        if (input.date) query = query.eq("date", input.date);
+        if (input.title) query = query.ilike("title", `%${input.title}%`);
+        const { error, count } = await query.select("id", { count: "exact" });
+        return error ? { error: error.message } : { success: true, deleted: count ?? 0 };
+      }
+      case "delete_contact": {
+        const { error, count } = await supabase
+          .from("contacts")
+          .delete()
+          .eq("user_id", userId)
+          .ilike("name", `%${input.name}%`)
+          .select("id", { count: "exact" });
+        return error ? { error: error.message } : { success: true, deleted: count ?? 0 };
+      }
       default:
         return { error: `Outil inconnu: ${name}` };
     }
@@ -735,6 +933,16 @@ module.exports = async (req, res) => {
         ? `Aiden a supprime la depense recurrente "${input.label}".`
         : `Aiden a mis a jour la depense recurrente "${input.label}".`;
       case "add_calendar_event": return `Aiden a ajoute "${input.title}" a ton calendrier le ${input.date}.`;
+      case "update_preferences": return "Aiden a mis a jour tes preferences.";
+      case "delete_workout": return result?.deleted ? `Aiden a supprime ${result.deleted} seance(s).` : null;
+      case "delete_body_metric": return result?.deleted ? "Aiden a supprime une mesure corporelle." : null;
+      case "reset_training_program": return input.delete
+        ? "Aiden a supprime ton programme d'entrainement actif."
+        : "Aiden a desactive ton programme d'entrainement actif.";
+      case "reset_adherence_cycle": return "Aiden a reinitialise ton cycle d'assiduite de 30 jours.";
+      case "delete_transaction": return result?.deleted ? `Aiden a supprime ${result.deleted} transaction(s).` : null;
+      case "delete_calendar_event": return result?.deleted ? `Aiden a supprime ${result.deleted} evenement(s) du calendrier.` : null;
+      case "delete_contact": return result?.deleted ? `Aiden a supprime ${result.deleted} contact(s).` : null;
       default: return null;
     }
   }

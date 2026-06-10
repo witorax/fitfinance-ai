@@ -57,10 +57,15 @@
     }
 
     async function loadHistory() {
+      // On ne recharge que les echanges des dernieres 24h pour limiter le cout en tokens.
+      // Le suivi a long terme (programmes, repas, finances, preferences...) est gere
+      // directement dans Supabase et reste accessible a Aiden via ses outils.
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabaseClient
         .from("ai_messages")
         .select("*")
         .eq("user_id", userId)
+        .gte("created_at", since)
         .order("created_at", { ascending: true })
         .limit(50);
 
