@@ -230,6 +230,7 @@
           <div class="meal-item-info">
             <span class="badge">${typeLabels[item.meal_type] || item.meal_type || "Repas"}</span>
             <strong>${item.name}</strong>
+            ${item.quantity ? `<span class="subtitle" style="margin:0;">${item.quantity}</span>` : ""}
             <span class="subtitle" style="margin:0;">${item.calories || 0} kcal · P:${item.protein || 0}g · G:${item.carbs || 0}g · L:${item.fat || 0}g</span>
           </div>
           <button type="button" class="${item.eaten ? "secondary" : ""}" onclick="toggleMealEaten('${item.id}', ${!item.eaten})">

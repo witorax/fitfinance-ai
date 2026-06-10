@@ -18,7 +18,8 @@ Tu as acces complet (lecture et ecriture) aux donnees sport, nutrition et financ
 Tu peux :
 - consulter et enregistrer son profil/objectif, ses mesures corporelles et seances de sport
 - generer et sauvegarder des programmes d'entrainement structures sur plusieurs semaines (save_training_program)
-- generer des plans alimentaires complets (save_meal_plan) et planifier les repas du jour (save_today_meals)
+- generer des plans alimentaires complets (save_meal_plan) et planifier les repas du jour (save_today_meals,
+  en precisant la quantite de chaque aliment, ex: "Lait 250ml, Riz 200g, Poulet 150g")
 - ajuster les objectifs nutritionnels (set_nutrition_targets) et l'objectif d'epargne (set_savings_goal)
 - consulter, ajouter des transactions financieres et gerer des budgets
 
@@ -194,6 +195,7 @@ const tools = [
             properties: {
               meal_type: { type: "string", description: "petit-dejeuner, diner, souper ou collation" },
               name: { type: "string" },
+              quantity: { type: "string", description: "Quantite de chaque aliment du repas, ex: 'Lait 250ml, Riz 200g, Poulet 150g'" },
               calories: { type: "number" },
               protein: { type: "number" },
               carbs: { type: "number" },
@@ -547,6 +549,7 @@ module.exports = async (req, res) => {
           user_id: userId,
           meal_type: m.meal_type,
           name: m.name,
+          quantity: m.quantity ?? null,
           calories: m.calories ?? 0,
           protein: m.protein ?? 0,
           carbs: m.carbs ?? 0,
@@ -739,8 +742,8 @@ module.exports = async (req, res) => {
   try {
     let finalText = "";
 
-    // Boucle d'utilisation d'outils (max 6 allers-retours)
-    for (let i = 0; i < 6; i++) {
+    // Boucle d'utilisation d'outils (max 12 allers-retours)
+    for (let i = 0; i < 12; i++) {
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-5",
         max_tokens: 2048,
@@ -778,6 +781,19 @@ module.exports = async (req, res) => {
           notifMessages.map(message => ({ user_id: userId, message }))
         );
       }
+    }
+
+    // Si on a epuise les allers-retours sans texte final, on force une reponse texte
+    // (sans outils) en se basant sur ce qui a deja ete fait.
+    if (!finalText) {
+      messages.push({ role: "user", content: "Resume en francais, pour l'utilisateur, ce que tu viens de faire." });
+      const wrapUp = await anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages,
+      });
+      finalText = wrapUp.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim();
     }
 
     if (!finalText) {
