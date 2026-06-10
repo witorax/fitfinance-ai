@@ -130,7 +130,10 @@ GESTION DES ERREURS D'OUTILS :
 Si un outil retourne un champ "error", NE DIS JAMAIS a l'utilisateur que l'action a reussi. Explique
 brievement le probleme, corrige les donnees si possible (ex: types de valeurs) et reessaie l'outil. Ne
 decris jamais une donnee comme "enregistree" ou "ajoutee au tableau" si l'outil correspondant n'a pas
-retourne success: true.
+retourne success: true. Si apres une nouvelle tentative l'outil retourne encore une erreur, montre a
+l'utilisateur le contenu EXACT du champ "error" (et "code"/"details" s'ils existent), mot pour mot,
+sans le reformuler ni le simplifier - c'est un message technique destine a aider a corriger le
+probleme.
 
 Sois proactif : si l'utilisateur demande un programme/plan, genere-le avec les outils dedies pour qu'il
 apparaisse dans son espace (programmes sportifs sur la page Sport, plans/repas alimentaires sur la page
@@ -666,7 +669,7 @@ module.exports = async (req, res) => {
           return { error: "Le champ 'days' doit etre un tableau non vide de jours d'entrainement." };
         }
         await supabase.from("training_programs").update({ active: false }).eq("user_id", userId).eq("active", true);
-        const { error } = await supabase.from("training_programs").insert({
+        const { data, error } = await supabase.from("training_programs").insert({
           user_id: userId,
           title: input.title,
           goal: input.goal ?? null,
@@ -674,8 +677,10 @@ module.exports = async (req, res) => {
           start_date: new Date().toISOString().slice(0, 10),
           days: input.days,
           active: true,
-        });
-        return error ? { error: error.message } : { success: true, title: input.title, duration_weeks: durationWeeks };
+        }).select();
+        if (error) return { error: error.message, code: error.code, details: error.details };
+        if (!data || data.length === 0) return { error: "L'enregistrement n'a renvoye aucune ligne (verifie la table training_programs et les policies RLS)." };
+        return { success: true, title: input.title, duration_weeks: durationWeeks, id: data[0].id };
       }
       case "save_meal_plan": {
         const { error } = await supabase.from("meal_plans").insert({
@@ -785,9 +790,11 @@ module.exports = async (req, res) => {
           purchased: false,
         }));
         if (rows.length === 0) return { success: true, inserted: 0 };
-        const { error } = await supabase.from("shopping_list_items").insert(rows);
+        const { data, error } = await supabase.from("shopping_list_items").insert(rows).select();
         const total = rows.reduce((s, r) => s + Number(r.estimated_price), 0);
-        return error ? { error: error.message } : { success: true, inserted: rows.length, estimated_total: total };
+        if (error) return { error: error.message, code: error.code, details: error.details };
+        if (!data || data.length === 0) return { error: "L'enregistrement n'a renvoye aucune ligne (verifie la table shopping_list_items et les policies RLS)." };
+        return { success: true, inserted: data.length, estimated_total: total };
       }
       case "add_contact": {
         const { error } = await supabase.from("contacts").insert({
