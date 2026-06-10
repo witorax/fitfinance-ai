@@ -23,12 +23,22 @@ Tu peux :
 - consulter, ajouter des transactions financieres et gerer des budgets
 
 PROGRAMMES D'ENTRAINEMENT (save_training_program) :
-Tu decides toi-meme, en tant que coach sportif expert, de la duree du programme (en semaines, ex: 6, 8 ou 12)
-selon l'objectif de l'utilisateur. Cree un programme structure avec un jour par entree (7 jours), chacun avec
-une liste d'exercices precisant sets, reps, repos, notes ET un "youtube_query" (terme de recherche YouTube
-precis pour un tutoriel de l'exercice, ex: "bench press technique tutorial"). Ne redemande PAS de modifier
-le programme avant la fin de la duree choisie (utilise get_recent_data pour verifier depuis combien de temps
-le programme actif tourne). A la fin de la periode, propose proactivement une mise a jour du programme.
+Par defaut, cree un programme d'une duree de 8 SEMAINES (duration_weeks = 8), sauf si l'objectif de
+l'utilisateur justifie clairement une autre duree (ex: 6 ou 12 semaines) — dans ce cas tu peux t'en
+ecarter en tant que coach sportif expert, mais 8 semaines reste la reference par defaut. Cree un
+programme structure avec un jour par entree (7 jours), chacun avec une liste d'exercices precisant sets,
+reps, repos, notes ET un "youtube_query" (terme de recherche YouTube precis pour un tutoriel de
+l'exercice, ex: "bench press technique tutorial").
+
+Ne propose PAS et ne redemande PAS de modifier le programme avant la fin des 8 (ou N) semaines choisies
+(utilise get_recent_data -> active_program.weeks_elapsed / duration_weeks / program_completed pour verifier
+ou en est l'utilisateur). Si l'utilisateur demande explicitement un changement avant la fin de la periode,
+tu peux le faire, mais rappelle-lui que l'ideal est de laisser le programme actuel se derouler pour juger
+correctement sa progression. A la fin des 8 semaines (program_completed = true), propose proactivement
+un nouveau programme de 8 semaines, ajuste selon : sa progression (poids/reps enregistres via
+exercise_logs, assiduite), et ses desirs/feedback exprimes entretemps (objectifs, preferences d'exercices,
+contraintes). Le nouveau programme doit etre une evolution coherente du precedent, pas une refonte
+arbitraire.
 
 LISTE DE COURSES ET BUDGET EPICERIE :
 L'utilisateur a un budget epicerie hebdomadaire (profile.grocery_budget_weekly, par defaut 80$ CAD,
@@ -113,13 +123,13 @@ const tools = [
   },
   {
     name: "save_training_program",
-    description: "Cree/remplace le programme d'entrainement structure actif de l'utilisateur, sur une duree (en semaines) que tu choisis selon son objectif.",
+    description: "Cree/remplace le programme d'entrainement structure actif de l'utilisateur. Duree par defaut : 8 semaines, sauf si son objectif justifie une autre duree.",
     input_schema: {
       type: "object",
       properties: {
         title: { type: "string" },
         goal: { type: "string" },
-        duration_weeks: { type: "number", description: "Duree du programme en semaines, choisie par toi (ex: 6, 8, 12)" },
+        duration_weeks: { type: "number", description: "Duree du programme en semaines. Par defaut 8, sauf si l'objectif de l'utilisateur justifie une autre duree (ex: 6, 12)" },
         days: {
           type: "array",
           description: "7 entrees, une par jour de la semaine (Lundi a Dimanche)",

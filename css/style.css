@@ -378,6 +378,23 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
 .pb-row { margin-bottom: 14px; }
 .pb-row:last-child { margin-bottom: 0; }
 
+/* ── Historique des cycles de 30 jours (dashboard) ── */
+.cycle-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cycle-pill {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.cycle-pill-success { color: var(--success); border-color: rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.08); }
+.cycle-pill-fail { color: var(--danger); border-color: rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.08); }
+
 /* ── Streak / programme ── */
 .streak-box {
   display: flex;

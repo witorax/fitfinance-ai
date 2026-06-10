@@ -32,7 +32,7 @@
 
     <div class="card" style="margin-top: 20px;">
       <h2>📅 Assiduite a l'entrainement</h2>
-      <p class="subtitle">Suivi de tes seances respectees, semaine par semaine.</p>
+      <p class="subtitle">Suivi de tes seances respectees : cycle de 30 jours et objectif long terme (programme de 8 semaines d'Aiden).</p>
       <div id="adherence-content"><p class="subtitle">Chargement...</p></div>
     </div>
 
@@ -111,9 +111,10 @@
         .maybeSingle();
 
       const today = new Date();
+      today.setHours(0, 0, 0, 0);
       const thisWeekStart = startOfWeek(today);
       const programStart = program ? startOfWeek(new Date(program.start_date)) : thisWeekStart;
-      const totalWeeks = program ? program.duration_weeks : 1;
+      const totalWeeks = program ? program.duration_weeks : 8;
 
       const { data: workouts } = await supabaseClient
         .from("workouts")
@@ -142,7 +143,83 @@
         if (days >= target) weeksSucceeded++;
       }
 
+      // ── CYCLE DE 30 JOURS (auto-reinitialise) ──
+      const daysTarget30 = Math.max(1, Math.round((target * 30) / 7));
+      let cycleStart = profile?.adherence_cycle_start ? new Date(profile.adherence_cycle_start) : new Date(today);
+      cycleStart.setHours(0, 0, 0, 0);
+      let daysElapsed30 = Math.floor((today - cycleStart) / 86400000);
+
+      // Si le cycle de 30 jours est termine, on l'archive et on en demarre un nouveau
+      while (daysElapsed30 >= 30) {
+        const cycleEnd = new Date(cycleStart);
+        cycleEnd.setDate(cycleEnd.getDate() + 30);
+
+        const { data: cycleWorkouts } = await supabaseClient
+          .from("workouts")
+          .select("date")
+          .eq("user_id", userId)
+          .gte("date", cycleStart.toISOString().slice(0, 10))
+          .lt("date", cycleEnd.toISOString().slice(0, 10));
+
+        const daysCompleted = new Set((cycleWorkouts || []).map(w => w.date)).size;
+
+        await supabaseClient.from("adherence_cycle_history").insert({
+          user_id: userId,
+          start_date: cycleStart.toISOString().slice(0, 10),
+          end_date: cycleEnd.toISOString().slice(0, 10),
+          days_completed: daysCompleted,
+          days_target: daysTarget30,
+          success: daysCompleted >= daysTarget30,
+        });
+
+        cycleStart = cycleEnd;
+        daysElapsed30 = Math.floor((today - cycleStart) / 86400000);
+      }
+
+      // Persiste la nouvelle date de debut de cycle si elle a change
+      const cycleStartStr = cycleStart.toISOString().slice(0, 10);
+      if (cycleStartStr !== profile?.adherence_cycle_start) {
+        await supabaseClient.from("profiles").update({ adherence_cycle_start: cycleStartStr }).eq("id", userId);
+      }
+
+      const { data: cycleWorkoutsNow } = await supabaseClient
+        .from("workouts")
+        .select("date")
+        .eq("user_id", userId)
+        .gte("date", cycleStartStr);
+
+      const daysCompleted30 = new Set((cycleWorkoutsNow || []).map(w => w.date)).size;
+      const pct30 = Math.min(100, Math.round((daysCompleted30 / daysTarget30) * 100));
+      const daysRemaining30 = 30 - daysElapsed30;
+
+      const { data: history } = await supabaseClient
+        .from("adherence_cycle_history")
+        .select("*")
+        .eq("user_id", userId)
+        .order("end_date", { ascending: false })
+        .limit(6);
+
       el.innerHTML = `
+        <h3 style="margin:0 0 4px; font-size:14px; -webkit-text-fill-color:var(--text); background:none;">Cycle de 30 jours</h3>
+        <div class="pb-row">
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+            <span>${daysRemaining30} jour(s) restant(s) avant reinitialisation</span><span>${daysCompleted30} / ${daysTarget30} jours</span>
+          </div>
+          <div style="background: var(--surface-2); border-radius: 8px; height: 10px; overflow:hidden;">
+            <div style="width:${pct30}%; height:100%; background: var(--gradient);"></div>
+          </div>
+        </div>
+        ${(history && history.length) ? `
+          <div class="cycle-history">
+            ${history.map(h => `
+              <span class="cycle-pill ${h.success ? "cycle-pill-success" : "cycle-pill-fail"}" title="${fmtDate(h.start_date)} - ${fmtDate(h.end_date)}">
+                ${h.success ? "✓" : "✗"} ${h.days_completed}/${h.days_target}
+              </span>
+            `).join("")}
+          </div>
+        ` : ""}
+
+        <h3 style="margin:18px 0 4px; font-size:14px; -webkit-text-fill-color:var(--text); background:none;">Objectif long terme (programme 8 semaines)</h3>
         <div class="pb-row">
           <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
             <span>Cette semaine</span><span>${thisWeekDays} / ${target} jours</span>
@@ -156,11 +233,15 @@
             <span class="streak-flame">🔥</span>
             <div>
               <strong>${weeksSucceeded} / ${totalWeeks}</strong> semaine(s) reussies
-              <div class="subtitle" style="margin:0;">Programme "${program.title}" — ${Math.min(weeksElapsed + 1, totalWeeks)}e semaine sur ${totalWeeks}</div>
+              <div class="subtitle" style="margin:0;">Programme "${program.title}" — ${Math.min(weeksElapsed + 1, totalWeeks)}e semaine sur ${totalWeeks}. Aiden ne le modifiera qu'a la fin des ${totalWeeks} semaines, selon ta progression.</div>
             </div>
           </div>
-        ` : `<p class="subtitle" style="margin-top:10px;">Aucun programme actif. Demande a <a href="coach.html">Aiden</a> de t'en generer un.</p>`}
+        ` : `<p class="subtitle" style="margin-top:10px;">Aucun programme actif. Demande a <a href="coach.html">Aiden</a> de t'en generer un (il creera un programme de 8 semaines par defaut).</p>`}
       `;
+    }
+
+    function fmtDate(d) {
+      return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
     }
 
     (async () => {
