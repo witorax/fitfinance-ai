@@ -373,3 +373,239 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 8px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+/* ── Barres de progression (dashboard, nutrition, finance) ── */
+.pb-row { margin-bottom: 14px; }
+.pb-row:last-child { margin-bottom: 0; }
+
+/* ── Streak / programme ── */
+.streak-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.streak-flame { font-size: 28px; line-height: 1; flex-shrink: 0; }
+
+/* ── Repas (nutrition.html) ── */
+.meal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.meal-item:last-child { margin-bottom: 0; }
+.meal-item-done { opacity: 0.6; }
+.meal-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.meal-item-info .badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--gradient);
+  color: white;
+  width: fit-content;
+}
+
+/* ── Chronometre / minuteur intervalle (sport.html) ── */
+.timer-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.timer-tab {
+  flex: 1;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  box-shadow: none;
+  font-weight: 600;
+  text-align: center;
+}
+.timer-tab.active {
+  background: var(--gradient);
+  color: white;
+}
+.timer-panel { display: none; }
+.timer-panel.active { display: block; }
+.timer-display {
+  font-size: 56px;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  margin: 16px 0;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.timer-controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+.timer-controls button { min-width: 110px; }
+.timer-phase {
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-2);
+  margin-bottom: 4px;
+}
+.lap-list { max-height: 200px; overflow-y: auto; }
+.lap-list .lap-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.lap-list .lap-row:last-child { border-bottom: none; }
+
+/* ── Programme d'entrainement (sport.html) ── */
+.prog-day {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 14px;
+  background: var(--surface-2);
+}
+.prog-day:last-child { margin-bottom: 0; }
+.prog-day-today {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.prog-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.prog-day-head h3 { margin: 0; font-size: 16px; }
+
+.exercise-row {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 10px;
+}
+.exercise-row:last-child { margin-bottom: 0; }
+.exercise-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.exercise-head strong { font-size: 14px; }
+.yt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--danger);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.yt-link:hover { background: var(--surface-2); }
+
+.weight-log-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.weight-log-row .weight-input,
+.weight-log-row .reps-input {
+  width: 80px;
+  margin-bottom: 0;
+  padding: 8px 10px;
+}
+.weight-log-row button { padding: 8px 14px; font-size: 13px; }
+.last-log {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+
+/* ── Horloge live (sport.html) ── */
+.live-clock {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+#live-time { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+#live-date { color: var(--text-dim); font-size: 14px; text-transform: capitalize; }
+
+/* ── Mobile responsiveness ── */
+@media (max-width: 768px) {
+  .container { padding: 16px 14px 48px; }
+
+  h1 { font-size: 24px; }
+  .card { padding: 18px; border-radius: var(--radius-sm); }
+
+  .navbar { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+  .navbar nav { flex-wrap: wrap; gap: 2px; justify-content: center; width: 100%; }
+  .navbar nav a { padding: 6px 10px; font-size: 13px; }
+
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat-card { padding: 14px; }
+  .stat-card .value { font-size: 22px; }
+
+  .row { flex-direction: column; gap: 0; }
+  .row > * { min-width: 0; }
+
+  input, select, textarea, button {
+    font-size: 16px; /* evite le zoom automatique sur iOS */
+  }
+
+  .chat-window { height: 50vh; }
+  .chat-msg { max-width: 92%; }
+
+  .timer-display { font-size: 40px; }
+  .timer-controls button { min-width: 90px; padding: 10px 14px; }
+
+  .prog-day-head { flex-direction: column; align-items: flex-start; }
+  .exercise-head { flex-direction: column; align-items: flex-start; }
+  .weight-log-row .weight-input,
+  .weight-log-row .reps-input { width: 70px; }
+
+  .meal-item { flex-direction: column; align-items: stretch; }
+  .meal-item button { width: 100%; }
+
+  .link-card { padding: 14px; }
+  .link-card .icon { width: 44px; height: 44px; font-size: 22px; }
+
+  table { font-size: 12px; }
+  th, td { padding: 8px 4px; }
+}
+
+@media (max-width: 420px) {
+  .stat-grid { grid-template-columns: 1fr; }
+  h1 { font-size: 22px; }
+}

@@ -13,7 +13,7 @@ async function requireAuthAndRenderNav(activePage) {
     { href: "sport.html", label: "Sport" },
     { href: "nutrition.html", label: "Nutrition" },
     { href: "finance.html", label: "Finance" },
-    { href: "coach.html", label: "Coach IA" },
+    { href: "coach.html", label: "Aiden" },
   ];
 
   const nav = document.createElement("div");

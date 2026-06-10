@@ -15,7 +15,7 @@
 <body>
   <div class="container">
     <h1>🍽️ Nutrition</h1>
-    <p class="subtitle">Tes plans alimentaires generes par le Coach IA, ajustes selon ton objectif et ta depense energetique.</p>
+    <p class="subtitle">Tes repas du jour, ajustes selon ton objectif et ta depense energetique.</p>
 
     <div class="stat-grid">
       <div class="stat-card">
@@ -36,16 +36,39 @@
       <div class="icon">📊</div>
       <div class="text">
         <strong>Voir mon suivi sportif</strong>
-        <span>Plus tu es actif, plus le Coach IA peut adapter tes apports caloriques en consequence.</span>
+        <span>Plus tu es actif, plus Aiden peut adapter tes apports caloriques en consequence.</span>
       </div>
     </a>
 
+    <!-- ── BILAN CALORIQUE / MACROS DU JOUR ── -->
     <div class="card">
-      <h2>Plans alimentaires generes par l'IA</h2>
+      <h2>🔥 Bilan du jour</h2>
+      <div id="macro-content"></div>
+    </div>
+
+    <!-- ── HYDRATATION ── -->
+    <div class="card">
+      <h2>💧 Hydratation</h2>
+      <div id="hydration-content"></div>
+      <div class="row" style="margin-top:10px;">
+        <button type="button" class="secondary" onclick="addWater(250)">+250 ml</button>
+        <button type="button" class="secondary" onclick="addWater(500)">+500 ml</button>
+        <button type="button" class="secondary" onclick="addWater(1000)">+1 L</button>
+      </div>
+    </div>
+
+    <!-- ── REPAS DU JOUR ── -->
+    <div class="card">
+      <h2>📋 Repas du jour</h2>
       <p class="subtitle">
-        Va sur la page <a href="coach.html">Coach IA</a> et demande par exemple :
-        "Genere-moi un plan alimentaire adapte a ma depense energetique de la semaine".
+        Va sur la page <a href="coach.html">Aiden</a> et demande par exemple :
+        "Planifie mes repas d'aujourd'hui selon ma depense energetique".
       </p>
+      <div id="today-meals-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>Plans alimentaires generes par Aiden</h2>
       <div id="plans-list"></div>
     </div>
   </div>
@@ -55,6 +78,7 @@
   <script src="js/markdown.js"></script>
   <script>
     let userId;
+    let profile = null;
 
     function fmtDate(d) {
       return new Date(d).toLocaleDateString("fr-FR");
@@ -68,6 +92,24 @@
       return d.toISOString().slice(0, 10);
     }
 
+    function todayStr() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function progressBar(label, current, target, unit) {
+      const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+      return `
+        <div class="pb-row">
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+            <span>${label}</span><span>${Math.round(current)} / ${Math.round(target)} ${unit}</span>
+          </div>
+          <div style="background: var(--surface-2); border-radius: 8px; height: 10px; overflow:hidden;">
+            <div style="width:${pct}%; height:100%; background: var(--gradient);"></div>
+          </div>
+        </div>
+      `;
+    }
+
     async function loadStats() {
       const { data: workouts } = await supabaseClient
         .from("workouts")
@@ -78,12 +120,109 @@
       const totalCalories = (workouts || []).reduce((s, w) => s + (Number(w.calories_burned) || 0), 0);
       document.getElementById("stat-calories-burned").textContent = totalCalories || "--";
 
-      const { data: profile } = await supabaseClient
+      const { data: p } = await supabaseClient
         .from("profiles")
-        .select("goal")
+        .select("*")
         .eq("id", userId)
         .single();
+      profile = p || {};
       document.getElementById("stat-goal").textContent = profile?.goal || "--";
+    }
+
+    // ── BILAN DU JOUR (calories/macros consommes vs objectifs) ──
+    async function loadMacros() {
+      const { data: items } = await supabaseClient
+        .from("meal_plan_items")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("date", todayStr());
+
+      const eaten = (items || []).filter(i => i.eaten);
+      const totals = eaten.reduce((acc, m) => {
+        acc.cal += Number(m.calories) || 0;
+        acc.prot += Number(m.protein) || 0;
+        acc.carbs += Number(m.carbs) || 0;
+        acc.fat += Number(m.fat) || 0;
+        return acc;
+      }, { cal: 0, prot: 0, carbs: 0, fat: 0 });
+
+      const targets = {
+        cal: profile?.calorie_target || 2400,
+        prot: profile?.protein_target || 160,
+        carbs: profile?.carbs_target || 250,
+        fat: profile?.fat_target || 70,
+      };
+
+      document.getElementById("macro-content").innerHTML =
+        progressBar("Calories", totals.cal, targets.cal, "kcal") +
+        progressBar("Proteines", totals.prot, targets.prot, "g") +
+        progressBar("Glucides", totals.carbs, targets.carbs, "g") +
+        progressBar("Lipides", totals.fat, targets.fat, "g");
+    }
+
+    // ── HYDRATATION ──
+    async function loadHydration() {
+      const { data } = await supabaseClient
+        .from("hydration_logs")
+        .select("amount_ml")
+        .eq("user_id", userId)
+        .eq("date", todayStr());
+
+      const total = (data || []).reduce((s, h) => s + (Number(h.amount_ml) || 0), 0);
+      const target = profile?.water_target_ml || 2500;
+
+      document.getElementById("hydration-content").innerHTML = progressBar("Eau", total, target, "ml");
+    }
+
+    async function addWater(ml) {
+      await supabaseClient.from("hydration_logs").insert({
+        user_id: userId,
+        date: todayStr(),
+        amount_ml: ml,
+      });
+      loadHydration();
+    }
+
+    // ── REPAS DU JOUR (avec confirmation) ──
+    async function loadTodayMeals() {
+      const { data: items } = await supabaseClient
+        .from("meal_plan_items")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("date", todayStr())
+        .order("created_at", { ascending: true });
+
+      const el = document.getElementById("today-meals-list");
+      if (!items || !items.length) {
+        el.innerHTML = `<p class="subtitle">Aucun repas planifie pour aujourd'hui.</p>`;
+        return;
+      }
+
+      const typeLabels = {
+        "petit-dejeuner": "Petit-dejeuner",
+        "diner": "Diner",
+        "souper": "Souper",
+        "collation": "Collation",
+      };
+
+      el.innerHTML = items.map(item => `
+        <div class="meal-item ${item.eaten ? "meal-item-done" : ""}">
+          <div class="meal-item-info">
+            <span class="badge">${typeLabels[item.meal_type] || item.meal_type || "Repas"}</span>
+            <strong>${item.name}</strong>
+            <span class="subtitle" style="margin:0;">${item.calories || 0} kcal · P:${item.protein || 0}g · G:${item.carbs || 0}g · L:${item.fat || 0}g</span>
+          </div>
+          <button type="button" class="${item.eaten ? "secondary" : ""}" onclick="toggleMealEaten('${item.id}', ${!item.eaten})">
+            ${item.eaten ? "✓ Mange" : "J'ai mange"}
+          </button>
+        </div>
+      `).join("");
+    }
+
+    async function toggleMealEaten(id, eaten) {
+      await supabaseClient.from("meal_plan_items").update({ eaten }).eq("id", id);
+      await loadTodayMeals();
+      await loadMacros();
     }
 
     async function loadPlans() {
@@ -115,8 +254,11 @@
       if (!session) return;
       userId = session.user.id;
 
-      loadStats();
-      loadPlans();
+      await loadStats();
+      await loadMacros();
+      await loadHydration();
+      await loadTodayMeals();
+      await loadPlans();
     })();
   </script>
 </body>

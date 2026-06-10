@@ -15,7 +15,15 @@
 <body>
   <div class="container">
     <h1>📊 Suivi sportif</h1>
-    <p class="subtitle">Tes mesures et seances ici alimentent ton bilan energetique, utilise par le Coach IA pour ajuster ton plan alimentaire.</p>
+    <p class="subtitle">Tes mesures et seances ici alimentent ton bilan energetique, utilise par Aiden pour ajuster ton plan alimentaire.</p>
+
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <div>
+        <div style="font-size:12px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em;" id="live-date"></div>
+        <div style="font-size:28px; font-weight:800; font-family:'JetBrains Mono', monospace;" id="live-time"></div>
+      </div>
+      <div id="program-status" style="text-align:right;"></div>
+    </div>
 
     <div class="stat-grid">
       <div class="stat-card">
@@ -36,9 +44,60 @@
       <div class="icon">🍽️</div>
       <div class="text">
         <strong>Voir mon plan alimentaire</strong>
-        <span>Ta depense energetique ci-dessus est utilisee par le Coach IA pour ajuster tes apports.</span>
+        <span>Ta depense energetique ci-dessus est utilisee par Aiden pour ajuster tes apports.</span>
       </div>
     </a>
+
+    <!-- ── CHRONOMETRE / MINUTEUR INTERVALLE ── -->
+    <div class="card">
+      <h2>⏱️ Chronometre</h2>
+      <div class="timer-tabs">
+        <button type="button" class="timer-tab active" data-mode="stopwatch" onclick="switchTimerMode('stopwatch')">Chrono</button>
+        <button type="button" class="timer-tab" data-mode="interval" onclick="switchTimerMode('interval')">Intervalles</button>
+      </div>
+
+      <div id="stopwatch-panel" class="timer-panel">
+        <div class="timer-display" id="sw-display">00:00.0</div>
+        <div class="timer-controls">
+          <button id="sw-start" onclick="swStart()">Demarrer</button>
+          <button class="secondary" id="sw-lap" onclick="swLap()" disabled>Tour</button>
+          <button class="secondary" onclick="swReset()">Reinitialiser</button>
+        </div>
+        <ul class="lap-list" id="sw-laps"></ul>
+      </div>
+
+      <div id="interval-panel" class="timer-panel" style="display:none;">
+        <div class="row">
+          <div>
+            <label for="iv-work">Effort (sec)</label>
+            <input type="number" id="iv-work" value="40" min="1" />
+          </div>
+          <div>
+            <label for="iv-rest">Repos (sec)</label>
+            <input type="number" id="iv-rest" value="20" min="0" />
+          </div>
+          <div>
+            <label for="iv-rounds">Rounds</label>
+            <input type="number" id="iv-rounds" value="8" min="1" />
+          </div>
+        </div>
+        <div class="timer-display" id="iv-display">40.0</div>
+        <div class="timer-phase" id="iv-phase">Pret</div>
+        <div class="timer-controls">
+          <button id="iv-start" onclick="ivStart()">Demarrer</button>
+          <button class="secondary" onclick="ivReset()">Reinitialiser</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PROGRAMME D'ENTRAINEMENT (Aiden) ── -->
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h2 style="margin:0;">🏋️ Programme d'entrainement</h2>
+      </div>
+      <p class="subtitle">Va sur la page <a href="coach.html">Aiden</a> et demande : "Genere-moi un programme d'entrainement complet".</p>
+      <div id="program-content"><p class="subtitle">Aucun programme actif pour le moment.</p></div>
+    </div>
 
     <div class="card">
       <h2>Ajouter une mesure</h2>
@@ -99,12 +158,6 @@
         <tbody id="workouts-body"></tbody>
       </table>
     </div>
-
-    <div class="card">
-      <h2>🏋️ Plans d'entrainement generes par l'IA</h2>
-      <p class="subtitle">Va sur la page <a href="coach.html">Coach IA</a> pour generer un plan d'entrainement personnalise.</p>
-      <div id="plans-list"></div>
-    </div>
   </div>
 
   <script src="js/config.js"></script>
@@ -112,6 +165,7 @@
   <script src="js/markdown.js"></script>
   <script>
     let userId;
+    const DAY_NAMES = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 
     function fmtDate(d) {
       return new Date(d).toLocaleDateString("fr-FR");
@@ -125,6 +179,132 @@
       return d.toISOString().slice(0, 10);
     }
 
+    // ── HORLOGE EN DIRECT ──
+    function tickClock() {
+      const now = new Date();
+      document.getElementById("live-date").textContent = now.toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+      document.getElementById("live-time").textContent = now.toLocaleTimeString("fr-FR");
+    }
+
+    // ── CHRONOMETRE (STOPWATCH) ──
+    let swInterval = null, swStartTs = 0, swElapsed = 0, swRunning = false, swLapCount = 0;
+    function fmtSw(ms) {
+      const totalMs = Math.floor(ms);
+      const m = Math.floor(totalMs / 60000);
+      const s = Math.floor((totalMs % 60000) / 1000);
+      const t = Math.floor((totalMs % 1000) / 100);
+      return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${t}`;
+    }
+    function swTick() {
+      document.getElementById("sw-display").textContent = fmtSw(Date.now() - swStartTs + swElapsed);
+    }
+    function swStart() {
+      const btn = document.getElementById("sw-start");
+      if (!swRunning) {
+        swRunning = true;
+        swStartTs = Date.now();
+        swInterval = setInterval(swTick, 100);
+        btn.textContent = "Pause";
+        document.getElementById("sw-lap").disabled = false;
+      } else {
+        swRunning = false;
+        clearInterval(swInterval);
+        swElapsed += Date.now() - swStartTs;
+        btn.textContent = "Reprendre";
+      }
+    }
+    function swLap() {
+      swLapCount++;
+      const li = document.createElement("li");
+      li.textContent = `Tour ${swLapCount} — ${document.getElementById("sw-display").textContent}`;
+      document.getElementById("sw-laps").prepend(li);
+    }
+    function swReset() {
+      swRunning = false;
+      clearInterval(swInterval);
+      swElapsed = 0;
+      swLapCount = 0;
+      document.getElementById("sw-display").textContent = "00:00.0";
+      document.getElementById("sw-start").textContent = "Demarrer";
+      document.getElementById("sw-lap").disabled = true;
+      document.getElementById("sw-laps").innerHTML = "";
+    }
+
+    // ── MINUTEUR INTERVALLES ──
+    let ivInterval = null, ivRunning = false, ivPhase = "work", ivRound = 1, ivRemaining = 0;
+    function ivStart() {
+      const btn = document.getElementById("iv-start");
+      if (ivRunning) {
+        ivRunning = false;
+        clearInterval(ivInterval);
+        btn.textContent = "Reprendre";
+        return;
+      }
+      if (ivRemaining <= 0) {
+        ivPhase = "work";
+        ivRound = 1;
+        ivRemaining = parseFloat(document.getElementById("iv-work").value) || 30;
+      }
+      ivRunning = true;
+      btn.textContent = "Pause";
+      ivInterval = setInterval(ivTick, 100);
+      ivRender();
+    }
+    function ivTick() {
+      ivRemaining -= 0.1;
+      if (ivRemaining <= 0) {
+        const work = parseFloat(document.getElementById("iv-work").value) || 30;
+        const rest = parseFloat(document.getElementById("iv-rest").value) || 0;
+        const rounds = parseInt(document.getElementById("iv-rounds").value) || 1;
+        if (ivPhase === "work") {
+          if (rest > 0) {
+            ivPhase = "rest";
+            ivRemaining = rest;
+          } else {
+            ivRound++;
+            if (ivRound > rounds) { ivFinish(); return; }
+            ivPhase = "work";
+            ivRemaining = work;
+          }
+        } else {
+          ivRound++;
+          if (ivRound > rounds) { ivFinish(); return; }
+          ivPhase = "work";
+          ivRemaining = work;
+        }
+      }
+      ivRender();
+    }
+    function ivFinish() {
+      ivRunning = false;
+      clearInterval(ivInterval);
+      ivRemaining = 0;
+      document.getElementById("iv-phase").textContent = "Termine !";
+      document.getElementById("iv-display").textContent = "00.0";
+      document.getElementById("iv-start").textContent = "Demarrer";
+    }
+    function ivRender() {
+      document.getElementById("iv-display").textContent = ivRemaining.toFixed(1);
+      const rounds = parseInt(document.getElementById("iv-rounds").value) || 1;
+      document.getElementById("iv-phase").textContent = (ivPhase === "work" ? "Effort" : "Repos") + ` — Round ${ivRound}/${rounds}`;
+    }
+    function ivReset() {
+      ivRunning = false;
+      clearInterval(ivInterval);
+      ivPhase = "work"; ivRound = 1;
+      ivRemaining = parseFloat(document.getElementById("iv-work").value) || 30;
+      document.getElementById("iv-start").textContent = "Demarrer";
+      document.getElementById("iv-display").textContent = ivRemaining.toFixed(1);
+      document.getElementById("iv-phase").textContent = "Pret";
+    }
+    function switchTimerMode(mode) {
+      document.querySelectorAll(".timer-tab").forEach(t => t.classList.toggle("active", t.dataset.mode === mode));
+      document.getElementById("stopwatch-panel").style.display = mode === "stopwatch" ? "block" : "none";
+      document.getElementById("interval-panel").style.display = mode === "interval" ? "block" : "none";
+      if (mode === "interval") ivReset();
+    }
+
+    // ── DONNEES ──
     async function loadMetrics() {
       const { data } = await supabaseClient
         .from("body_metrics")
@@ -183,41 +363,161 @@
       const startStr = startOfWeekStr();
       const { data } = await supabaseClient
         .from("workouts")
-        .select("calories_burned")
+        .select("date, calories_burned")
         .eq("user_id", userId)
         .gte("date", startStr);
 
-      document.getElementById("stat-workouts").textContent = (data || []).length;
+      const distinctDays = new Set((data || []).map(w => w.date)).size;
+      document.getElementById("stat-workouts").textContent = distinctDays;
       const totalCalories = (data || []).reduce((s, w) => s + (Number(w.calories_burned) || 0), 0);
       document.getElementById("stat-calories").textContent = totalCalories || "--";
     }
 
-    async function loadPlans() {
-      const { data } = await supabaseClient
-        .from("workout_plans")
+    // ── PROGRAMME D'ENTRAINEMENT STRUCTURE ──
+    function youtubeUrl(query) {
+      return "https://www.youtube.com/results?search_query=" + encodeURIComponent(query || "tutoriel exercice musculation");
+    }
+
+    async function loadProgram() {
+      const { data: program } = await supabaseClient
+        .from("training_programs")
         .select("*")
         .eq("user_id", userId)
+        .eq("active", true)
         .order("created_at", { ascending: false })
-        .limit(5);
+        .limit(1)
+        .maybeSingle();
 
-      document.getElementById("plans-list").innerHTML = (data || []).length
-        ? data.map(p => `
-          <div class="plan-card">
-            <div class="plan-meta">
-              <span class="badge">${p.goal || "Plan sportif"}</span>
-              <span class="subtitle">${fmtDate(p.created_at)}</span>
+      const statusEl = document.getElementById("program-status");
+      const contentEl = document.getElementById("program-content");
+
+      if (!program) {
+        statusEl.innerHTML = "";
+        contentEl.innerHTML = `<p class="subtitle">Aucun programme actif pour le moment.</p>`;
+        return;
+      }
+
+      const start = new Date(program.start_date);
+      const now = new Date();
+      const weeksElapsed = Math.floor((now - start) / (7 * 86400000));
+      const weeksRemaining = Math.max(0, program.duration_weeks - weeksElapsed);
+      const completed = weeksElapsed >= program.duration_weeks;
+
+      statusEl.innerHTML = `
+        <span class="badge" style="background:${completed ? "var(--danger)" : "var(--gradient)"};">
+          ${completed ? "Programme termine" : `Semaine ${weeksElapsed + 1} / ${program.duration_weeks}`}
+        </span>
+        ${completed ? `<div class="subtitle" style="margin-top:6px;">Demande a <a href="coach.html">Aiden</a> un nouveau programme.</div>` : `<div class="subtitle" style="margin-top:6px;">${weeksRemaining} semaine(s) restante(s)</div>`}
+      `;
+
+      // Charger les derniers poids/reps utilises pour chaque exercice
+      const allExNames = [];
+      (program.days || []).forEach(d => (d.exercises || []).forEach(e => allExNames.push(e.name)));
+      const { data: logs } = await supabaseClient
+        .from("exercise_logs")
+        .select("*")
+        .eq("user_id", userId)
+        .in("exercise_name", allExNames.length ? allExNames : ["__none__"])
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      const lastByExercise = {};
+      (logs || []).forEach(l => {
+        if (!lastByExercise[l.exercise_name]) lastByExercise[l.exercise_name] = l;
+      });
+
+      const todayIdx = (new Date().getDay() + 6) % 7; // 0 = Lundi
+      const today = new Date().toISOString().slice(0, 10);
+
+      // Verifier si la seance du jour est deja confirmee
+      const { data: todayWorkouts } = await supabaseClient
+        .from("workouts")
+        .select("id, name")
+        .eq("user_id", userId)
+        .eq("date", today);
+
+      contentEl.innerHTML = (program.days || []).map((day, idx) => {
+        const isToday = idx === todayIdx;
+        const alreadyDone = (todayWorkouts || []).some(w => w.name === (day.day_name || DAY_NAMES[idx]));
+        let exHtml = "";
+        if (day.rest) {
+          exHtml = `<p class="subtitle" style="margin:8px 0 0;">Jour de repos / recuperation active.</p>`;
+        } else {
+          exHtml = (day.exercises || []).map(ex => {
+            const last = lastByExercise[ex.name];
+            const exId = (idx + "_" + ex.name).replace(/[^a-zA-Z0-9_]/g, "_");
+            return `
+              <div class="exercise-row">
+                <div class="exercise-head">
+                  <strong>${ex.name}</strong>
+                  <a href="${youtubeUrl(ex.youtube_query || ex.name)}" target="_blank" rel="noopener" class="yt-link">▶ Tuto YouTube</a>
+                </div>
+                <div class="subtitle" style="margin:2px 0 8px;">
+                  ${ex.sets ? ex.sets + " x " : ""}${ex.reps || ""}${ex.rest_time ? " · repos " + ex.rest_time : ""}
+                  ${ex.notes ? "<br>" + ex.notes : ""}
+                </div>
+                <div class="weight-log-row">
+                  <input type="number" step="0.5" placeholder="Poids (kg)" class="weight-input" id="w_${exId}" value="${last?.weight_kg ?? ""}" data-exercise="${ex.name.replace(/"/g, "&quot;")}">
+                  <input type="number" placeholder="Reps" class="reps-input" id="r_${exId}" value="${last?.reps ?? ""}">
+                  <button type="button" class="secondary" onclick="saveExerciseLog('${ex.name.replace(/'/g, "\\'")}','${exId}')">Sauver</button>
+                  ${last ? `<span class="last-log">Dernier: ${last.weight_kg ?? "-"}kg${last.reps ? " x " + last.reps : ""} (${fmtDate(last.date)})</span>` : ""}
+                </div>
+              </div>
+            `;
+          }).join("");
+        }
+        return `
+          <div class="prog-day ${isToday ? "prog-day-today" : ""}">
+            <div class="prog-day-head">
+              <h3 style="margin:0;">${day.day_name || DAY_NAMES[idx]}${isToday ? " · Aujourd'hui" : ""}</h3>
+              ${day.focus ? `<span class="badge">${day.focus}</span>` : ""}
             </div>
-            ${p.title ? `<h3 style="margin-top:0;">${p.title}</h3>` : ""}
-            <div class="markdown-content">${renderMarkdown(typeof p.content === "string" ? p.content : JSON.stringify(p.content, null, 2))}</div>
+            ${exHtml}
+            ${(!day.rest && isToday) ? `
+              <button type="button" style="margin-top:10px;" ${alreadyDone ? "disabled" : ""} onclick="confirmWorkoutDay('${(day.day_name || DAY_NAMES[idx]).replace(/'/g,"\\'")}', this)">
+                ${alreadyDone ? "✓ Seance confirmee" : "✓ Confirmer la seance du jour"}
+              </button>
+            ` : ""}
           </div>
-        `).join("")
-        : `<p class="subtitle">Aucun plan genere pour le moment.</p>`;
+        `;
+      }).join("");
+    }
+
+    async function saveExerciseLog(exerciseName, exId) {
+      const weight = document.getElementById("w_" + exId).value;
+      const reps = document.getElementById("r_" + exId).value;
+      if (!weight && !reps) return;
+      await supabaseClient.from("exercise_logs").insert({
+        user_id: userId,
+        exercise_name: exerciseName,
+        date: new Date().toISOString().slice(0, 10),
+        weight_kg: weight || null,
+        reps: reps || null,
+      });
+      loadProgram();
+    }
+
+    async function confirmWorkoutDay(dayName, btn) {
+      btn.disabled = true;
+      btn.textContent = "✓ Seance confirmee";
+      await supabaseClient.from("workouts").insert({
+        user_id: userId,
+        date: new Date().toISOString().slice(0, 10),
+        name: dayName,
+        notes: "Confirmee depuis le programme Aiden",
+      });
+      loadStats();
+      loadWorkouts();
     }
 
     (async () => {
       const session = await requireAuthAndRenderNav("sport.html");
       if (!session) return;
       userId = session.user.id;
+
+      tickClock();
+      setInterval(tickClock, 1000);
+      ivReset();
 
       document.getElementById("m_date").valueAsDate = new Date();
       document.getElementById("w_date").valueAsDate = new Date();
@@ -253,7 +553,7 @@
       loadMetrics();
       loadWorkouts();
       loadStats();
-      loadPlans();
+      loadProgram();
     })();
   </script>
 </body>

@@ -17,16 +17,38 @@
     <div class="stat-grid">
       <div class="stat-card">
         <div class="value amount-positive" id="stat-income">--</div>
-        <div class="label">Revenus du mois (€)</div>
+        <div class="label">Revenus du mois ($)</div>
       </div>
       <div class="stat-card">
         <div class="value amount-negative" id="stat-expenses">--</div>
-        <div class="label">Depenses du mois (€)</div>
+        <div class="label">Depenses du mois ($)</div>
       </div>
       <div class="stat-card">
         <div class="value" id="stat-balance">--</div>
-        <div class="label">Solde du mois (€)</div>
+        <div class="label">Solde du mois ($)</div>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>🎯 Objectif d'epargne</h2>
+      <div id="savings-goal-content"></div>
+      <form id="goal-form" style="margin-top:14px;">
+        <div class="row">
+          <div>
+            <label for="g_title">Nom de l'objectif</label>
+            <input type="text" id="g_title" placeholder="Ex: Voyage, Fonds d'urgence..." required />
+          </div>
+          <div>
+            <label for="g_target">Montant cible ($)</label>
+            <input type="number" step="0.01" id="g_target" placeholder="5000" required />
+          </div>
+          <div>
+            <label for="g_current">Montant actuel ($)</label>
+            <input type="number" step="0.01" id="g_current" placeholder="0" />
+          </div>
+        </div>
+        <button type="submit">Enregistrer l'objectif</button>
+      </form>
     </div>
 
     <div class="card">
@@ -42,7 +64,7 @@
             <input type="text" id="t_category" placeholder="Loyer, Salaire, Courses..." required />
           </div>
           <div>
-            <label for="t_amount">Montant (€)</label>
+            <label for="t_amount">Montant ($)</label>
             <input type="number" step="0.01" id="t_amount" placeholder="-50 ou 1500" required />
           </div>
         </div>
@@ -70,7 +92,7 @@
             <input type="text" id="b_category" placeholder="Alimentation" required />
           </div>
           <div>
-            <label for="b_limit">Limite mensuelle (€)</label>
+            <label for="b_limit">Limite mensuelle ($)</label>
             <input type="number" step="0.01" id="b_limit" placeholder="300" required />
           </div>
         </div>
@@ -108,7 +130,7 @@
           <td>${fmtDate(t.date)}</td>
           <td>${t.category}</td>
           <td>${t.description ?? "-"}</td>
-          <td class="${Number(t.amount) >= 0 ? "amount-positive" : "amount-negative"}">${Number(t.amount).toFixed(2)} €</td>
+          <td class="${Number(t.amount) >= 0 ? "amount-positive" : "amount-negative"}">${Number(t.amount).toFixed(2)} $</td>
           <td><button class="secondary" data-del-tx="${t.id}">Suppr.</button></td>
         </tr>
       `).join("") || `<tr><td colspan="5">Aucune transaction pour le moment.</td></tr>`;
@@ -169,7 +191,7 @@
           <div style="margin-bottom: 12px;">
             <div style="display:flex; justify-content:space-between; font-size:14px;">
               <span>${b.category}</span>
-              <span class="${over ? "amount-negative" : ""}">${spent.toFixed(2)} € / ${Number(b.monthly_limit).toFixed(2)} €</span>
+              <span class="${over ? "amount-negative" : ""}">${spent.toFixed(2)} $ / ${Number(b.monthly_limit).toFixed(2)} $</span>
               <button class="secondary" data-del-budget="${b.id}" style="padding:2px 8px;">Suppr.</button>
             </div>
             <div style="background: var(--surface); border-radius: 6px; height: 8px; overflow:hidden; margin-top:4px;">
@@ -187,12 +209,69 @@
       });
     }
 
+    // ── OBJECTIF D'EPARGNE ──
+    async function loadSavingsGoal() {
+      const { data: goal } = await supabaseClient
+        .from("finance_goals")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const el = document.getElementById("savings-goal-content");
+
+      if (!goal) {
+        el.innerHTML = `<p class="subtitle">Aucun objectif defini. Cree-en un ci-dessous, ou demande a <a href="coach.html">Aiden</a>.</p>`;
+        document.getElementById("g_title").value = "";
+        document.getElementById("g_target").value = "";
+        document.getElementById("g_current").value = "";
+        return;
+      }
+
+      const pct = goal.target_amount > 0 ? Math.min(100, Math.round((goal.current_amount / goal.target_amount) * 100)) : 0;
+      el.innerHTML = `
+        <div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:6px;">
+          <strong>${goal.title}</strong>
+          <span>${Number(goal.current_amount).toFixed(2)} $ / ${Number(goal.target_amount).toFixed(2)} $</span>
+        </div>
+        <div style="background: var(--surface-2); border-radius: 8px; height: 10px; overflow:hidden;">
+          <div style="width:${pct}%; height:100%; background: var(--gradient);"></div>
+        </div>
+        <div class="subtitle" style="margin-top:6px;">${pct}% atteint</div>
+      `;
+
+      document.getElementById("g_title").value = goal.title;
+      document.getElementById("g_target").value = goal.target_amount;
+      document.getElementById("g_current").value = goal.current_amount;
+      document.getElementById("goal-form").dataset.goalId = goal.id;
+    }
+
     (async () => {
       const session = await requireAuthAndRenderNav("finance.html");
       if (!session) return;
       userId = session.user.id;
 
       document.getElementById("t_date").valueAsDate = new Date();
+
+      document.getElementById("goal-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const goalId = e.target.dataset.goalId;
+        const payload = {
+          user_id: userId,
+          title: document.getElementById("g_title").value,
+          target_amount: document.getElementById("g_target").value || 0,
+          current_amount: document.getElementById("g_current").value || 0,
+        };
+        if (goalId) {
+          await supabaseClient.from("finance_goals").update(payload).eq("id", goalId);
+        } else {
+          await supabaseClient.from("finance_goals").insert(payload);
+        }
+        loadSavingsGoal();
+      });
+
+      loadSavingsGoal();
 
       document.getElementById("tx-form").addEventListener("submit", async (e) => {
         e.preventDefault();
