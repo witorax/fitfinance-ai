@@ -976,6 +976,7 @@ module.exports = async (req, res) => {
 
   try {
     let finalText = "";
+    let forcedContinuations = 0;
 
     // Boucle d'utilisation d'outils (max 12 allers-retours)
     for (let i = 0; i < 12; i++) {
@@ -991,7 +992,25 @@ module.exports = async (req, res) => {
       const textBlocks = response.content.filter(b => b.type === "text");
       finalText = textBlocks.map(b => b.text).join("\n").trim();
 
-      if (response.stop_reason !== "tool_use" || toolUses.length === 0) {
+      if (toolUses.length === 0) {
+        // Si la reponse se termine par ":" ou "..." sans appel d'outil, le modele a
+        // annonce une action ("Laisse-moi faire X maintenant :") sans l'executer.
+        // On le force a continuer au lieu de renvoyer cette annonce a l'utilisateur.
+        const looksUnfinished = /[:…]\s*$/.test(finalText);
+        if (looksUnfinished && forcedContinuations < 3 && i < 11) {
+          forcedContinuations++;
+          messages.push({ role: "assistant", content: response.content });
+          messages.push({
+            role: "user",
+            content: "Tu n'as pas termine : tu as annonce une action sans appeler l'outil correspondant. " +
+              "Appelle MAINTENANT l'outil approprie pour l'executer reellement, sans repeter ton annonce.",
+          });
+          continue;
+        }
+        break;
+      }
+
+      if (response.stop_reason !== "tool_use") {
         break;
       }
 
