@@ -985,7 +985,9 @@ module.exports = async (req, res) => {
     }
   }
 
-  const DEBUG_TOOLS = ["save_training_program", "save_shopping_list", "save_meal_plan", "save_today_meals", "update_preferences"];
+  // Tous les outils qui ecrivent en base : suivis pour le debug et la detection
+  // de fausses confirmations (tout sauf get_profile / get_recent_data).
+  const READ_ONLY_TOOLS = ["get_profile", "get_recent_data"];
   const debugLog = [];
 
   try {
@@ -1007,17 +1009,25 @@ module.exports = async (req, res) => {
       finalText = textBlocks.map(b => b.text).join("\n").trim();
 
       if (toolUses.length === 0) {
-        // Si la reponse se termine par ":" ou "..." sans appel d'outil, le modele a
-        // annonce une action ("Laisse-moi faire X maintenant :") sans l'executer.
-        // On le force a continuer au lieu de renvoyer cette annonce a l'utilisateur.
+        // Cas 1 : reponse qui se termine par ":" ou "..." -> action annoncee mais pas executee.
         const looksUnfinished = /[:…]\s*$/.test(finalText);
-        if (looksUnfinished && forcedContinuations < 3 && i < 11) {
+        // Cas 2 : reponse qui PRETEND avoir sauvegarde/cree quelque chose alors qu'aucun
+        // outil de sauvegarde n'a ete appele pendant ce tour -> mensonge, on rejette.
+        const claimsSave = /(sauvegard|enregistr|cr[eé][eé]|ajout[eé]|c'est dans ton|page sport|espace sport|maintenant actif|maintenant visible)/i.test(finalText);
+        const liedAboutSave = claimsSave && debugLog.length === 0;
+        if ((looksUnfinished || liedAboutSave) && forcedContinuations < 4 && i < 11) {
           forcedContinuations++;
           messages.push({ role: "assistant", content: response.content });
           messages.push({
             role: "user",
-            content: "Tu n'as pas termine : tu as annonce une action sans appeler l'outil correspondant. " +
-              "Appelle MAINTENANT l'outil approprie pour l'executer reellement, sans repeter ton annonce.",
+            content: liedAboutSave
+              ? "STOP. Ta reponse pretend avoir cree/sauvegarde quelque chose, mais le serveur confirme " +
+                "qu'AUCUN outil de sauvegarde n'a ete appele pendant ce tour : rien n'a ete enregistre. " +
+                "N'ecris PAS de texte de confirmation. Appelle MAINTENANT l'outil de sauvegarde approprie " +
+                "(save_training_program, save_shopping_list, save_meal_plan, save_today_meals...) avec les " +
+                "donnees completes, puis seulement apres confirme avec son resultat reel."
+              : "Tu n'as pas termine : tu as annonce une action sans appeler l'outil correspondant. " +
+                "Appelle MAINTENANT l'outil approprie pour l'executer reellement, sans repeter ton annonce.",
           });
           continue;
         }
@@ -1039,7 +1049,7 @@ module.exports = async (req, res) => {
           tool_use_id: toolUse.id,
           content: JSON.stringify(result),
         });
-        if (DEBUG_TOOLS.includes(toolUse.name)) {
+        if (!READ_ONLY_TOOLS.includes(toolUse.name)) {
           debugLog.push({ tool: toolUse.name, result });
         }
         const notifMsg = notificationMessage(toolUse.name, toolUse.input || {}, result);
