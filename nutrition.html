@@ -67,6 +67,26 @@
       <div id="today-meals-list"></div>
     </div>
 
+    <!-- ── LISTE DE COURSES ── -->
+    <div class="card">
+      <h2>🛒 Liste de courses</h2>
+      <p class="subtitle">
+        Generee par <a href="coach.html">Aiden</a> en fonction de tes repas planifies et de ton budget hebdomadaire.
+        Demande-lui par exemple : "Genere ma liste de courses pour la semaine".
+      </p>
+      <div class="row" style="align-items:flex-end;">
+        <div>
+          <label for="grocery-budget">Budget epicerie hebdomadaire ($)</label>
+          <input type="number" step="1" id="grocery-budget" placeholder="80" />
+        </div>
+        <div style="flex:0 0 auto;">
+          <button type="button" class="secondary" id="save-budget-btn">Enregistrer</button>
+        </div>
+      </div>
+      <div id="shopping-summary"></div>
+      <div id="shopping-list"></div>
+    </div>
+
     <div class="card">
       <h2>Plans alimentaires generes par Aiden</h2>
       <div id="plans-list"></div>
@@ -225,6 +245,71 @@
       await loadMacros();
     }
 
+    // ── LISTE DE COURSES ──
+    async function loadShoppingList() {
+      const { data: items } = await supabaseClient
+        .from("shopping_list_items")
+        .select("*")
+        .eq("user_id", userId)
+        .order("category", { ascending: true });
+
+      const budget = profile?.grocery_budget_weekly || 80;
+      document.getElementById("grocery-budget").value = budget;
+
+      const list = items || [];
+      const total = list.reduce((s, i) => s + Number(i.estimated_price), 0);
+      const purchasedTotal = list.filter(i => i.purchased).reduce((s, i) => s + Number(i.estimated_price), 0);
+      const over = total > budget;
+
+      document.getElementById("shopping-summary").innerHTML = `
+        <div class="pb-row">
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+            <span>Total estime</span>
+            <span class="${over ? "amount-negative" : "amount-positive"}">${total.toFixed(2)} $ / ${Number(budget).toFixed(2)} $</span>
+          </div>
+          <div style="background: var(--surface-2); border-radius: 8px; height: 10px; overflow:hidden;">
+            <div style="width:${Math.min(100, Math.round((total / budget) * 100))}%; height:100%; background: ${over ? "var(--danger)" : "var(--gradient)"};"></div>
+          </div>
+        </div>
+        ${list.length ? `<p class="subtitle" style="margin-top:6px;">Deja achete : ${purchasedTotal.toFixed(2)} $</p>` : ""}
+      `;
+
+      const el = document.getElementById("shopping-list");
+      if (!list.length) {
+        el.innerHTML = `<p class="subtitle">Aucune liste de courses pour le moment.</p>`;
+        return;
+      }
+
+      const byCategory = {};
+      list.forEach(i => {
+        const cat = i.category || "Autres";
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(i);
+      });
+
+      el.innerHTML = Object.entries(byCategory).map(([cat, catItems]) => `
+        <div class="shopping-category">
+          <h3>${cat}</h3>
+          ${catItems.map(i => `
+            <label class="shopping-item ${i.purchased ? "shopping-item-done" : ""}">
+              <input type="checkbox" ${i.purchased ? "checked" : ""} data-toggle-item="${i.id}" data-purchased="${!i.purchased}" />
+              <span class="shopping-item-name">${i.name}${i.quantity ? ` <span class="subtitle" style="margin:0;">(${i.quantity})</span>` : ""}</span>
+              <span class="shopping-item-price">${Number(i.estimated_price).toFixed(2)} $</span>
+            </label>
+          `).join("")}
+        </div>
+      `).join("");
+
+      el.querySelectorAll("[data-toggle-item]").forEach(input => {
+        input.addEventListener("change", async () => {
+          await supabaseClient.from("shopping_list_items")
+            .update({ purchased: input.dataset.purchased === "true" })
+            .eq("id", input.dataset.toggleItem);
+          loadShoppingList();
+        });
+      });
+    }
+
     async function loadPlans() {
       const { data } = await supabaseClient
         .from("meal_plans")
@@ -258,7 +343,15 @@
       await loadMacros();
       await loadHydration();
       await loadTodayMeals();
+      await loadShoppingList();
       await loadPlans();
+
+      document.getElementById("save-budget-btn").addEventListener("click", async () => {
+        const value = document.getElementById("grocery-budget").value || 80;
+        await supabaseClient.from("profiles").update({ grocery_budget_weekly: value }).eq("id", userId);
+        profile.grocery_budget_weekly = value;
+        loadShoppingList();
+      });
     })();
   </script>
 </body>

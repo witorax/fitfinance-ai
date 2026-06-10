@@ -30,6 +30,16 @@ precis pour un tutoriel de l'exercice, ex: "bench press technique tutorial"). Ne
 le programme avant la fin de la duree choisie (utilise get_recent_data pour verifier depuis combien de temps
 le programme actif tourne). A la fin de la periode, propose proactivement une mise a jour du programme.
 
+LISTE DE COURSES ET BUDGET EPICERIE :
+L'utilisateur a un budget epicerie hebdomadaire (profile.grocery_budget_weekly, par defaut 80$ CAD,
+generalement entre 80$ et 90$). Quand tu generes ou mets a jour les repas du jour ou un plan alimentaire,
+genere AUSSI une liste de courses coherente avec save_shopping_list : les aliments necessaires pour
+preparer ces repas (quantites realistes pour la semaine), avec un prix estime par article en dollars
+canadiens. Le total estime de la liste doit respecter le budget hebdomadaire de l'utilisateur (reste sous
+ou proche de 80-90$ sauf indication contraire). Si le budget ne permet pas de couvrir tous les repas
+prevus, priorise les aliments de base et indique-le a l'utilisateur. Regroupe les articles par categorie
+(ex: Fruits et legumes, Proteines, Produits laitiers, Epicerie/seches, Surgeles, Autres).
+
 NUTRITION ET HYDRATATION :
 Sport et Nutrition sont deux sections distinctes mais liees : la depense energetique (calories_burned
 des seances, disponible via get_recent_data) doit influencer les plans alimentaires et objectifs caloriques
@@ -181,8 +191,31 @@ const tools = [
     },
   },
   {
+    name: "save_shopping_list",
+    description: "Remplace la liste de courses de l'utilisateur par les articles necessaires pour ses repas planifies, en respectant son budget epicerie hebdomadaire.",
+    input_schema: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              quantity: { type: "string", description: "Ex: 1kg, 2, 500g, 1L" },
+              category: { type: "string", description: "Ex: Fruits et legumes, Proteines, Produits laitiers, Epicerie, Surgeles, Autres" },
+              estimated_price: { type: "number", description: "Prix estime en dollars canadiens" },
+            },
+            required: ["name", "estimated_price"],
+          },
+        },
+      },
+      required: ["items"],
+    },
+  },
+  {
     name: "set_nutrition_targets",
-    description: "Met a jour les objectifs nutritionnels quotidiens de l'utilisateur (calories, macros, hydratation).",
+    description: "Met a jour les objectifs nutritionnels quotidiens de l'utilisateur (calories, macros, hydratation, budget epicerie).",
     input_schema: {
       type: "object",
       properties: {
@@ -191,6 +224,7 @@ const tools = [
         carbs_target: { type: "number" },
         fat_target: { type: "number" },
         water_target_ml: { type: "number" },
+        grocery_budget_weekly: { type: "number", description: "Budget epicerie hebdomadaire en dollars canadiens" },
       },
     },
   },
@@ -347,6 +381,8 @@ module.exports = async (req, res) => {
           { data: savingsGoal },
           { data: contacts },
           { data: recurring },
+          { data: shoppingList },
+          { data: profileData },
         ] = await Promise.all([
           supabase.from("body_metrics").select("*").eq("user_id", userId).order("date", { ascending: false }).limit(5),
           supabase.from("workouts").select("*").eq("user_id", userId).order("date", { ascending: false }).limit(5),
@@ -359,6 +395,8 @@ module.exports = async (req, res) => {
           supabase.from("finance_goals").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
           supabase.from("contacts").select("*").eq("user_id", userId),
           supabase.from("finance_recurring").select("*").eq("user_id", userId),
+          supabase.from("shopping_list_items").select("*").eq("user_id", userId).order("category"),
+          supabase.from("profiles").select("grocery_budget_weekly").eq("id", userId).maybeSingle(),
         ]);
 
         const calories_burned_this_week = (weekWorkouts || []).reduce((s, w) => s + (Number(w.calories_burned) || 0), 0);
@@ -409,6 +447,8 @@ module.exports = async (req, res) => {
 
         const recurring_monthly_total = (recurring || []).reduce((s, r) => s + Number(r.amount), 0);
 
+        const shopping_list_total = (shoppingList || []).reduce((s, i) => s + Number(i.estimated_price), 0);
+
         return {
           metrics,
           workouts,
@@ -424,6 +464,9 @@ module.exports = async (req, res) => {
           upcoming_birthdays: upcomingBirthdays,
           recurring_transactions: recurring,
           recurring_monthly_total,
+          shopping_list: shoppingList,
+          shopping_list_total,
+          grocery_budget_weekly: profileData?.grocery_budget_weekly ?? 80,
         };
       }
       case "add_body_metric": {
@@ -487,7 +530,7 @@ module.exports = async (req, res) => {
       }
       case "set_nutrition_targets": {
         const update = {};
-        ["calorie_target", "protein_target", "carbs_target", "fat_target", "water_target_ml"].forEach(k => {
+        ["calorie_target", "protein_target", "carbs_target", "fat_target", "water_target_ml", "grocery_budget_weekly"].forEach(k => {
           if (input[k] !== undefined) update[k] = input[k];
         });
         if (Object.keys(update).length === 0) return { success: true, updated: false };
@@ -553,6 +596,21 @@ module.exports = async (req, res) => {
           });
           return error ? { error: error.message } : { success: true, created: true };
         }
+      }
+      case "save_shopping_list": {
+        await supabase.from("shopping_list_items").delete().eq("user_id", userId);
+        const rows = (input.items || []).map(i => ({
+          user_id: userId,
+          name: i.name,
+          quantity: i.quantity ?? null,
+          category: i.category ?? "Autres",
+          estimated_price: i.estimated_price ?? 0,
+          purchased: false,
+        }));
+        if (rows.length === 0) return { success: true, inserted: 0 };
+        const { error } = await supabase.from("shopping_list_items").insert(rows);
+        const total = rows.reduce((s, r) => s + Number(r.estimated_price), 0);
+        return error ? { error: error.message } : { success: true, inserted: rows.length, estimated_total: total };
       }
       case "add_contact": {
         const { error } = await supabase.from("contacts").insert({

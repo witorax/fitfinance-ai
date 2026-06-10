@@ -664,3 +664,38 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
   .contact-row .row { width: 100%; }
   .contact-row button { width: 100%; }
 }
+
+/* ── Liste de courses (nutrition.html) ── */
+.shopping-category { margin-top: 16px; }
+.shopping-category:first-child { margin-top: 8px; }
+.shopping-category h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-2);
+  margin: 0 0 8px;
+  -webkit-text-fill-color: var(--accent-2);
+  background: none;
+}
+.shopping-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.shopping-item:last-child { margin-bottom: 0; }
+.shopping-item input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+.shopping-item-name { flex: 1; font-size: 14px; }
+.shopping-item-price { font-weight: 700; font-size: 14px; flex-shrink: 0; }
+.shopping-item-done { opacity: 0.5; }
+.shopping-item-done .shopping-item-name,
+.shopping-item-done .shopping-item-price { text-decoration: line-through; }
