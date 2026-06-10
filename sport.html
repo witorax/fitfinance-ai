@@ -100,6 +100,12 @@
     </div>
 
     <div class="card">
+      <h2>🏆 Records personnels</h2>
+      <p class="subtitle">Le poids le plus eleve enregistre pour chaque exercice.</p>
+      <div id="records-content"><p class="subtitle">Aucun record pour le moment.</p></div>
+    </div>
+
+    <div class="card">
       <h2>Ajouter une mesure</h2>
       <form id="metric-form">
         <div class="row">
@@ -495,6 +501,44 @@
         reps: reps || null,
       });
       loadProgram();
+      loadRecords();
+    }
+
+    // ── RECORDS PERSONNELS ──
+    async function loadRecords() {
+      const { data } = await supabaseClient
+        .from("exercise_logs")
+        .select("exercise_name, weight_kg, reps, date")
+        .eq("user_id", userId)
+        .not("weight_kg", "is", null)
+        .order("weight_kg", { ascending: false });
+
+      const el = document.getElementById("records-content");
+      if (!data || !data.length) {
+        el.innerHTML = `<p class="subtitle">Aucun record pour le moment. Enregistre tes poids depuis le programme ci-dessus.</p>`;
+        return;
+      }
+
+      const best = {};
+      data.forEach(log => {
+        if (!best[log.exercise_name] || Number(log.weight_kg) > Number(best[log.exercise_name].weight_kg)) {
+          best[log.exercise_name] = log;
+        }
+      });
+
+      const records = Object.values(best).sort((a, b) => a.exercise_name.localeCompare(b.exercise_name));
+
+      el.innerHTML = `
+        <div class="records-grid">
+          ${records.map(r => `
+            <div class="record-card">
+              <div class="record-name">${r.exercise_name}</div>
+              <div class="record-value">${Number(r.weight_kg)} kg</div>
+              <div class="subtitle" style="margin:0;">${r.reps ? `${r.reps} reps · ` : ""}${fmtDate(r.date)}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
     }
 
     async function confirmWorkoutDay(dayName, btn) {
@@ -554,6 +598,7 @@
       loadWorkouts();
       loadStats();
       loadProgram();
+      loadRecords();
     })();
   </script>
 </body>

@@ -52,6 +52,37 @@
     </div>
 
     <div class="card">
+      <h2>🔁 Depenses et revenus recurrents</h2>
+      <p class="subtitle">Loyer, abonnements, salaire... pour avoir une vue d'ensemble de tes engagements mensuels.</p>
+      <div id="recurring-summary"></div>
+      <div id="recurring-list" style="margin-top:10px;"></div>
+      <form id="recurring-form" style="margin-top:14px;">
+        <div class="row">
+          <div>
+            <label for="r_label">Nom</label>
+            <input type="text" id="r_label" placeholder="Ex: Loyer, Netflix..." required />
+          </div>
+          <div>
+            <label for="r_category">Categorie</label>
+            <input type="text" id="r_category" placeholder="Logement, Abonnements..." />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="r_amount">Montant ($)</label>
+            <input type="number" step="0.01" id="r_amount" placeholder="-1200 ou 2500" required />
+          </div>
+          <div>
+            <label for="r_day">Jour du mois</label>
+            <input type="number" id="r_day" min="1" max="31" placeholder="1" value="1" required />
+          </div>
+        </div>
+        <button type="submit">Ajouter</button>
+        <p class="subtitle">Astuce : utilise un montant negatif pour une depense, positif pour un revenu (ex: salaire).</p>
+      </form>
+    </div>
+
+    <div class="card">
       <h2>Ajouter une transaction</h2>
       <form id="tx-form">
         <div class="row">
@@ -247,12 +278,68 @@
       document.getElementById("goal-form").dataset.goalId = goal.id;
     }
 
+    // ── DEPENSES/REVENUS RECURRENTS ──
+    async function loadRecurring() {
+      const { data } = await supabaseClient
+        .from("finance_recurring")
+        .select("*")
+        .eq("user_id", userId)
+        .order("day_of_month", { ascending: true });
+
+      const items = data || [];
+      const total = items.reduce((s, r) => s + Number(r.amount), 0);
+
+      document.getElementById("recurring-summary").innerHTML = `
+        <div style="display:flex; justify-content:space-between; font-size:14px;">
+          <span>Solde mensuel fixe</span>
+          <strong class="${total >= 0 ? "amount-positive" : "amount-negative"}">${total.toFixed(2)} $</strong>
+        </div>
+      `;
+
+      document.getElementById("recurring-list").innerHTML = items.length ? items.map(r => `
+        <div class="contact-row">
+          <div class="contact-info">
+            <strong>${r.label}</strong>
+            <span class="badge">${r.category || "Autre"}</span>
+            <span class="subtitle" style="margin:0;">Le ${r.day_of_month} de chaque mois</span>
+          </div>
+          <div class="row" style="flex:0 0 auto; gap:8px; align-items:center;">
+            <span class="${Number(r.amount) >= 0 ? "amount-positive" : "amount-negative"}">${Number(r.amount).toFixed(2)} $</span>
+            <button type="button" class="danger" data-del-rec="${r.id}">Suppr.</button>
+          </div>
+        </div>
+      `).join("") : `<p class="subtitle">Aucune depense/revenu recurrent defini.</p>`;
+
+      document.querySelectorAll("[data-del-rec]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          await supabaseClient.from("finance_recurring").delete().eq("id", btn.dataset.delRec);
+          loadRecurring();
+        });
+      });
+    }
+
     (async () => {
       const session = await requireAuthAndRenderNav("finance.html");
       if (!session) return;
       userId = session.user.id;
 
       document.getElementById("t_date").valueAsDate = new Date();
+
+      document.getElementById("recurring-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await supabaseClient.from("finance_recurring").insert({
+          user_id: userId,
+          label: document.getElementById("r_label").value,
+          category: document.getElementById("r_category").value || null,
+          amount: document.getElementById("r_amount").value,
+          day_of_month: document.getElementById("r_day").value || 1,
+        });
+        e.target.reset();
+        document.getElementById("r_day").value = 1;
+        loadRecurring();
+      });
+
+      loadRecurring();
 
       document.getElementById("goal-form").addEventListener("submit", async (e) => {
         e.preventDefault();

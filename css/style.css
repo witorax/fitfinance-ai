@@ -609,3 +609,58 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
   .stat-grid { grid-template-columns: 1fr; }
   h1 { font-size: 22px; }
 }
+
+/* ── Relations (relations.html) + listes recurrentes (finance.html) ── */
+.contact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.contact-row:last-child { margin-bottom: 0; }
+.contact-overdue { border-color: var(--accent); }
+.contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.contact-info .badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--gradient);
+  color: white;
+  width: fit-content;
+}
+
+/* ── Records personnels (sport.html) ── */
+.records-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+.record-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  text-align: center;
+}
+.record-name { font-size: 13px; color: var(--text-dim); font-weight: 600; margin-bottom: 4px; }
+.record-value { font-size: 22px; font-weight: 800; }
+
+@media (max-width: 768px) {
+  .contact-row { flex-direction: column; align-items: stretch; }
+  .contact-row .row { width: 100%; }
+  .contact-row button { width: 100%; }
+}

@@ -39,10 +39,25 @@ cette depense energetique recente et mentionne brievement comment tu en as tenu 
 geree par l'utilisateur directement dans l'app (boutons +250ml/+500ml/+1L) ; tu peux toutefois ajuster
 l'objectif d'hydratation via set_nutrition_targets si pertinent.
 
+RELATIONS :
+Tu as aussi acces a la liste des contacts importants de l'utilisateur (famille, amis, partenaire,
+collegues), avec leur frequence de contact souhaitee, la date du dernier contact et leur anniversaire.
+get_recent_data te donne la liste des contacts "a recontacter" (en retard par rapport a leur frequence)
+et les anniversaires dans les 30 prochains jours. Si l'utilisateur le demande, signale-lui ces elements
+et propose des actions concretes (ex: "Appelle Marie cette semaine, ca fait 20 jours"). Utilise add_contact
+pour ajouter un nouveau contact si l'utilisateur t'en parle, et log_contact_interaction pour enregistrer
+qu'il a contacte quelqu'un aujourd'hui.
+
+DEPENSES RECURRENTES :
+L'utilisateur peut avoir des depenses/revenus recurrents (loyer, abonnements, salaire) geres via
+set_recurring_transaction. Prends-les en compte (disponibles dans get_recent_data) quand tu analyses
+ses finances ou proposes un budget/objectif d'epargne.
+
 Sois proactif : si l'utilisateur demande un programme/plan, genere-le avec les outils dedies pour qu'il
 apparaisse dans son espace (programmes sportifs sur la page Sport, plans/repas alimentaires sur la page
 Nutrition). Si l'utilisateur demande d'enregistrer quelque chose (seance, mesure, transaction, budget,
-objectif d'epargne), utilise les outils pour le faire reellement, ne te contente pas de le decrire.
+objectif d'epargne, contact, depense recurrente), utilise les outils pour le faire reellement, ne te
+contente pas de le decrire.
 
 Formate tes reponses en Markdown clair (titres avec #, listes, **gras**, tableaux si utile) pour un bon
 rendu visuel. Les montants sont en dollars canadiens ($ CAD). Reponds toujours en francais, de maniere
@@ -218,6 +233,48 @@ const tools = [
       required: ["target_amount"],
     },
   },
+  {
+    name: "add_contact",
+    description: "Ajoute un contact (personne importante) au suivi relationnel de l'utilisateur.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        relationship_type: { type: "string", description: "famille, ami, partenaire, collegue ou autre" },
+        contact_frequency_days: { type: "number", description: "Frequence de contact souhaitee en jours, ex: 14" },
+        birthday: { type: "string", description: "Date de naissance au format YYYY-MM-DD (optionnel)" },
+        notes: { type: "string" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "log_contact_interaction",
+    description: "Enregistre que l'utilisateur a contacte une personne aujourd'hui (met a jour la date du dernier contact).",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Nom du contact (recherche approximative)" },
+        date: { type: "string", description: "Date au format YYYY-MM-DD, par defaut aujourd'hui" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "set_recurring_transaction",
+    description: "Cree, met a jour ou supprime une depense/revenu recurrent (loyer, abonnement, salaire...).",
+    input_schema: {
+      type: "object",
+      properties: {
+        label: { type: "string" },
+        category: { type: "string" },
+        amount: { type: "number", description: "Negatif = depense, positif = revenu" },
+        day_of_month: { type: "number", description: "Jour du mois ou la transaction se produit (1-31)" },
+        delete: { type: "boolean", description: "Si true, supprime la transaction recurrente correspondant a label" },
+      },
+      required: ["label"],
+    },
+  },
 ];
 
 module.exports = async (req, res) => {
@@ -288,6 +345,8 @@ module.exports = async (req, res) => {
           { data: todayMeals },
           { data: hydration },
           { data: savingsGoal },
+          { data: contacts },
+          { data: recurring },
         ] = await Promise.all([
           supabase.from("body_metrics").select("*").eq("user_id", userId).order("date", { ascending: false }).limit(5),
           supabase.from("workouts").select("*").eq("user_id", userId).order("date", { ascending: false }).limit(5),
@@ -298,6 +357,8 @@ module.exports = async (req, res) => {
           supabase.from("meal_plan_items").select("*").eq("user_id", userId).eq("date", today),
           supabase.from("hydration_logs").select("amount_ml").eq("user_id", userId).eq("date", today),
           supabase.from("finance_goals").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+          supabase.from("contacts").select("*").eq("user_id", userId),
+          supabase.from("finance_recurring").select("*").eq("user_id", userId),
         ]);
 
         const calories_burned_this_week = (weekWorkouts || []).reduce((s, w) => s + (Number(w.calories_burned) || 0), 0);
@@ -319,6 +380,35 @@ module.exports = async (req, res) => {
           };
         }
 
+        const now = new Date();
+        const contactsOverdue = (contacts || [])
+          .filter(c => {
+            const freq = c.contact_frequency_days || 14;
+            if (!c.last_contact_date) return true;
+            const days = Math.floor((now - new Date(c.last_contact_date)) / 86400000);
+            return days >= freq;
+          })
+          .map(c => ({
+            name: c.name,
+            relationship_type: c.relationship_type,
+            days_since_contact: c.last_contact_date ? Math.floor((now - new Date(c.last_contact_date)) / 86400000) : null,
+            contact_frequency_days: c.contact_frequency_days,
+          }));
+
+        const upcomingBirthdays = (contacts || [])
+          .map(c => {
+            if (!c.birthday) return null;
+            const b = new Date(c.birthday);
+            let next = new Date(now.getFullYear(), b.getMonth(), b.getDate());
+            const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            if (next < todayMid) next = new Date(now.getFullYear() + 1, b.getMonth(), b.getDate());
+            const daysUntil = Math.round((next - todayMid) / 86400000);
+            return daysUntil <= 30 ? { name: c.name, date: next.toISOString().slice(0, 10), days_until: daysUntil } : null;
+          })
+          .filter(Boolean);
+
+        const recurring_monthly_total = (recurring || []).reduce((s, r) => s + Number(r.amount), 0);
+
         return {
           metrics,
           workouts,
@@ -330,6 +420,10 @@ module.exports = async (req, res) => {
           today_meals: todayMeals,
           hydration_today_ml,
           savings_goal: savingsGoal,
+          contacts_to_recontact: contactsOverdue,
+          upcoming_birthdays: upcomingBirthdays,
+          recurring_transactions: recurring,
+          recurring_monthly_total,
         };
       }
       case "add_body_metric": {
@@ -457,6 +551,62 @@ module.exports = async (req, res) => {
             target_amount: input.target_amount ?? 0,
             current_amount: input.current_amount ?? 0,
           });
+          return error ? { error: error.message } : { success: true, created: true };
+        }
+      }
+      case "add_contact": {
+        const { error } = await supabase.from("contacts").insert({
+          user_id: userId,
+          name: input.name,
+          relationship_type: input.relationship_type ?? null,
+          contact_frequency_days: input.contact_frequency_days ?? 14,
+          birthday: input.birthday ?? null,
+          notes: input.notes ?? null,
+          last_contact_date: new Date().toISOString().slice(0, 10),
+        });
+        return error ? { error: error.message } : { success: true };
+      }
+      case "log_contact_interaction": {
+        const { data: match } = await supabase
+          .from("contacts")
+          .select("id, name")
+          .eq("user_id", userId)
+          .ilike("name", `%${input.name}%`)
+          .limit(1)
+          .maybeSingle();
+        if (!match) return { error: `Aucun contact trouve pour "${input.name}"` };
+        const { error } = await supabase
+          .from("contacts")
+          .update({ last_contact_date: input.date || new Date().toISOString().slice(0, 10) })
+          .eq("id", match.id);
+        return error ? { error: error.message } : { success: true, contact: match.name };
+      }
+      case "set_recurring_transaction": {
+        const { data: existing } = await supabase
+          .from("finance_recurring")
+          .select("id")
+          .eq("user_id", userId)
+          .ilike("label", input.label)
+          .maybeSingle();
+
+        if (input.delete) {
+          if (!existing) return { success: true, deleted: false };
+          const { error } = await supabase.from("finance_recurring").delete().eq("id", existing.id);
+          return error ? { error: error.message } : { success: true, deleted: true };
+        }
+
+        const payload = {
+          label: input.label,
+          category: input.category ?? null,
+          amount: input.amount ?? 0,
+          day_of_month: input.day_of_month ?? 1,
+        };
+
+        if (existing) {
+          const { error } = await supabase.from("finance_recurring").update(payload).eq("id", existing.id);
+          return error ? { error: error.message } : { success: true, updated: true };
+        } else {
+          const { error } = await supabase.from("finance_recurring").insert({ user_id: userId, ...payload });
           return error ? { error: error.message } : { success: true, created: true };
         }
       }

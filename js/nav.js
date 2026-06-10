@@ -13,6 +13,7 @@ async function requireAuthAndRenderNav(activePage) {
     { href: "sport.html", label: "Sport" },
     { href: "nutrition.html", label: "Nutrition" },
     { href: "finance.html", label: "Finance" },
+    { href: "relations.html", label: "Relations" },
     { href: "coach.html", label: "Aiden" },
   ];
 

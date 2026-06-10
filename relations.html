@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relations - FitFinance AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>👥 Relations</h1>
+    <p class="subtitle">Garde le contact avec les personnes importantes pour toi.</p>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="value" id="stat-total">--</div>
+        <div class="label">Contacts suivis</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stat-overdue">--</div>
+        <div class="label">A recontacter</div>
+      </div>
+      <div class="stat-card">
+        <div class="value" id="stat-birthdays">--</div>
+        <div class="label">Anniversaires (30j)</div>
+      </div>
+    </div>
+
+    <!-- ── ANNIVERSAIRES A VENIR ── -->
+    <div class="card">
+      <h2>🎂 Anniversaires a venir</h2>
+      <div id="birthdays-content"><p class="subtitle">Chargement...</p></div>
+    </div>
+
+    <!-- ── A RECONTACTER ── -->
+    <div class="card">
+      <h2>🔔 A recontacter</h2>
+      <p class="subtitle">D'apres la frequence de contact que tu as definie pour chaque personne.</p>
+      <div id="overdue-content"><p class="subtitle">Chargement...</p></div>
+    </div>
+
+    <!-- ── AJOUTER UN CONTACT ── -->
+    <div class="card">
+      <h2 id="form-title">Ajouter un contact</h2>
+      <form id="contact-form">
+        <div class="row">
+          <div>
+            <label for="c_name">Nom</label>
+            <input type="text" id="c_name" placeholder="Ex: Marie" required />
+          </div>
+          <div>
+            <label for="c_type">Type de relation</label>
+            <select id="c_type">
+              <option value="famille">Famille</option>
+              <option value="ami">Ami(e)</option>
+              <option value="partenaire">Partenaire</option>
+              <option value="collegue">Collegue</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="c_freq">Frequence de contact souhaitee (jours)</label>
+            <input type="number" id="c_freq" placeholder="14" value="14" min="1" required />
+          </div>
+          <div>
+            <label for="c_birthday">Anniversaire</label>
+            <input type="date" id="c_birthday" />
+          </div>
+        </div>
+        <label for="c_notes">Notes</label>
+        <textarea id="c_notes" rows="2" placeholder="Optionnel"></textarea>
+        <button type="submit">Enregistrer</button>
+        <button type="button" class="secondary" id="cancel-edit" style="display:none;">Annuler</button>
+      </form>
+    </div>
+
+    <!-- ── TOUS LES CONTACTS ── -->
+    <div class="card">
+      <h2>Tous mes contacts</h2>
+      <div id="contacts-list"></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    let userId;
+    let contacts = [];
+    const relationLabels = {
+      famille: "Famille", ami: "Ami(e)", partenaire: "Partenaire",
+      collegue: "Collegue", autre: "Autre",
+    };
+
+    function todayStr() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function daysSince(dateStr) {
+      if (!dateStr) return Infinity;
+      const d = new Date(dateStr);
+      const now = new Date();
+      d.setHours(0,0,0,0);
+      now.setHours(0,0,0,0);
+      return Math.floor((now - d) / 86400000);
+    }
+
+    // Prochaine occurrence de l'anniversaire (jour/mois) a partir d'aujourd'hui
+    function nextBirthday(birthday) {
+      if (!birthday) return null;
+      const b = new Date(birthday);
+      const now = new Date();
+      let next = new Date(now.getFullYear(), b.getMonth(), b.getDate());
+      next.setHours(0,0,0,0);
+      const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (next < todayMid) {
+        next = new Date(now.getFullYear() + 1, b.getMonth(), b.getDate());
+      }
+      return next;
+    }
+
+    function fmtDate(d) {
+      return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+    }
+
+    async function loadContacts() {
+      const { data } = await supabaseClient
+        .from("contacts")
+        .select("*")
+        .eq("user_id", userId)
+        .order("name", { ascending: true });
+
+      contacts = data || [];
+      renderStats();
+      renderBirthdays();
+      renderOverdue();
+      renderList();
+    }
+
+    function renderStats() {
+      document.getElementById("stat-total").textContent = contacts.length;
+
+      const overdue = contacts.filter(c => daysSince(c.last_contact_date) >= (c.contact_frequency_days || 14));
+      document.getElementById("stat-overdue").textContent = overdue.length;
+
+      const upcoming = contacts.filter(c => {
+        const nb = nextBirthday(c.birthday);
+        if (!nb) return false;
+        return (nb - new Date()) / 86400000 <= 30;
+      });
+      document.getElementById("stat-birthdays").textContent = upcoming.length;
+    }
+
+    function renderBirthdays() {
+      const el = document.getElementById("birthdays-content");
+      const upcoming = contacts
+        .map(c => ({ c, nb: nextBirthday(c.birthday) }))
+        .filter(x => x.nb && (x.nb - new Date()) / 86400000 <= 30)
+        .sort((a, b) => a.nb - b.nb);
+
+      if (!upcoming.length) {
+        el.innerHTML = `<p class="subtitle">Aucun anniversaire dans les 30 prochains jours.</p>`;
+        return;
+      }
+
+      el.innerHTML = upcoming.map(({ c, nb }) => {
+        const inDays = Math.round((nb - new Date()) / 86400000);
+        return `
+          <div class="contact-row">
+            <div class="contact-info">
+              <strong>${c.name}</strong>
+              <span class="subtitle" style="margin:0;">🎂 ${fmtDate(nb)} ${inDays === 0 ? "(aujourd'hui !)" : `(dans ${inDays} j)`}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderOverdue() {
+      const el = document.getElementById("overdue-content");
+      const overdue = contacts
+        .filter(c => daysSince(c.last_contact_date) >= (c.contact_frequency_days || 14))
+        .sort((a, b) => daysSince(b.last_contact_date) - daysSince(a.last_contact_date));
+
+      if (!overdue.length) {
+        el.innerHTML = `<p class="subtitle">Tout est a jour, bravo ! 🎉</p>`;
+        return;
+      }
+
+      el.innerHTML = overdue.map(c => {
+        const ds = daysSince(c.last_contact_date);
+        const since = c.last_contact_date ? `il y a ${ds} jour(s)` : "jamais contacte";
+        return `
+          <div class="contact-row">
+            <div class="contact-info">
+              <strong>${c.name}</strong>
+              <span class="badge">${relationLabels[c.relationship_type] || "Autre"}</span>
+              <span class="subtitle" style="margin:0;">Dernier contact : ${since} (objectif : tous les ${c.contact_frequency_days || 14} j)</span>
+            </div>
+            <button type="button" data-mark="${c.id}">✓ Contact fait aujourd'hui</button>
+          </div>
+        `;
+      }).join("");
+
+      el.querySelectorAll("[data-mark]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          await supabaseClient.from("contacts").update({ last_contact_date: todayStr() }).eq("id", btn.dataset.mark);
+          loadContacts();
+        });
+      });
+    }
+
+    function renderList() {
+      const el = document.getElementById("contacts-list");
+      if (!contacts.length) {
+        el.innerHTML = `<p class="subtitle">Aucun contact pour le moment. Ajoute les personnes importantes pour toi ci-dessus.</p>`;
+        return;
+      }
+
+      el.innerHTML = contacts.map(c => {
+        const ds = daysSince(c.last_contact_date);
+        const overdue = ds >= (c.contact_frequency_days || 14);
+        const since = c.last_contact_date ? `il y a ${ds} j` : "jamais";
+        return `
+          <div class="contact-row ${overdue ? "contact-overdue" : ""}">
+            <div class="contact-info">
+              <strong>${c.name}</strong>
+              <span class="badge">${relationLabels[c.relationship_type] || "Autre"}</span>
+              <span class="subtitle" style="margin:0;">Dernier contact : ${since} · objectif : ${c.contact_frequency_days || 14} j${c.birthday ? ` · 🎂 ${fmtDate(c.birthday)}` : ""}</span>
+              ${c.notes ? `<span class="subtitle" style="margin:0;">${c.notes}</span>` : ""}
+            </div>
+            <div class="row" style="flex:0 0 auto; gap:8px;">
+              <button type="button" class="secondary" data-edit="${c.id}">Modifier</button>
+              <button type="button" class="danger" data-del="${c.id}">Suppr.</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      el.querySelectorAll("[data-edit]").forEach(btn => {
+        btn.addEventListener("click", () => startEdit(btn.dataset.edit));
+      });
+      el.querySelectorAll("[data-del]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          await supabaseClient.from("contacts").delete().eq("id", btn.dataset.del);
+          loadContacts();
+        });
+      });
+    }
+
+    function startEdit(id) {
+      const c = contacts.find(c => c.id === id);
+      if (!c) return;
+      document.getElementById("form-title").textContent = `Modifier ${c.name}`;
+      document.getElementById("c_name").value = c.name;
+      document.getElementById("c_type").value = c.relationship_type || "autre";
+      document.getElementById("c_freq").value = c.contact_frequency_days || 14;
+      document.getElementById("c_birthday").value = c.birthday || "";
+      document.getElementById("c_notes").value = c.notes || "";
+      document.getElementById("contact-form").dataset.editId = id;
+      document.getElementById("cancel-edit").style.display = "inline-block";
+      document.getElementById("contact-form").scrollIntoView({ behavior: "smooth" });
+    }
+
+    function resetForm() {
+      document.getElementById("form-title").textContent = "Ajouter un contact";
+      document.getElementById("contact-form").reset();
+      document.getElementById("c_freq").value = 14;
+      delete document.getElementById("contact-form").dataset.editId;
+      document.getElementById("cancel-edit").style.display = "none";
+    }
+
+    (async () => {
+      const session = await requireAuthAndRenderNav("relations.html");
+      if (!session) return;
+      userId = session.user.id;
+
+      document.getElementById("contact-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const editId = e.target.dataset.editId;
+        const payload = {
+          user_id: userId,
+          name: document.getElementById("c_name").value,
+          relationship_type: document.getElementById("c_type").value,
+          contact_frequency_days: document.getElementById("c_freq").value || 14,
+          birthday: document.getElementById("c_birthday").value || null,
+          notes: document.getElementById("c_notes").value || null,
+        };
+        if (editId) {
+          await supabaseClient.from("contacts").update(payload).eq("id", editId);
+        } else {
+          payload.last_contact_date = todayStr();
+          await supabaseClient.from("contacts").insert(payload);
+        }
+        resetForm();
+        loadContacts();
+      });
+
+      document.getElementById("cancel-edit").addEventListener("click", resetForm);
+
+      await loadContacts();
+    })();
+  </script>
+</body>
+</html>
