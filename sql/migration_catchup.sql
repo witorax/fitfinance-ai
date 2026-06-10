@@ -80,9 +80,9 @@ insert into storage.buckets (id, name, public)
 values ('avatars', 'avatars', true)
 on conflict (id) do nothing;
 
+-- Pas de policy SELECT sur storage.objects : le bucket est public, les fichiers
+-- sont servis directement via getPublicUrl() sans necessiter de RLS sur la table.
 drop policy if exists "Avatar images are publicly accessible" on storage.objects;
-create policy "Avatar images are publicly accessible" on storage.objects
-  for select using (bucket_id = 'avatars');
 
 drop policy if exists "Users can upload their own avatar" on storage.objects;
 create policy "Users can upload their own avatar" on storage.objects
