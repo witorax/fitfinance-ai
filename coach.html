@@ -30,6 +30,9 @@
     </p>
 
     <div class="card">
+      <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+        <button type="button" class="secondary" id="reset-chat-btn">🗑️ Nouvelle conversation</button>
+      </div>
       <div class="chat-window" id="chat-window"></div>
       <div class="chat-input-row">
         <textarea id="chat-input" rows="2" placeholder="Ecris ton message..."></textarea>
@@ -145,6 +148,13 @@
           e.preventDefault();
           sendMessage();
         }
+      });
+
+      document.getElementById("reset-chat-btn").addEventListener("click", async () => {
+        if (!confirm("Effacer l'historique de cette conversation avec Aiden ?")) return;
+        await supabaseClient.from("ai_messages").delete().eq("user_id", userId);
+        history.length = 0;
+        document.getElementById("chat-window").innerHTML = "";
       });
     })();
   </script>
