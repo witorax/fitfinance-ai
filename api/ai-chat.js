@@ -998,7 +998,10 @@ module.exports = async (req, res) => {
     for (let i = 0; i < 12; i++) {
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-5",
-        max_tokens: 2048,
+        // 8192 : un appel save_training_program complet (7 jours x 5-6 exercices en JSON)
+        // depasse largement 2048 tokens ; une limite trop basse coupe l'appel d'outil
+        // en plein milieu et la sauvegarde n'a jamais lieu.
+        max_tokens: 8192,
         system: SYSTEM_PROMPT,
         tools,
         messages,
