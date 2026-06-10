@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profil - FitFinance AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>👤 Profil</h1>
+    <p class="subtitle">Personnalise ton profil : nom affiche et photo.</p>
+
+    <div class="card">
+      <div class="profile-header">
+        <div class="profile-avatar-wrap">
+          <img id="profile-avatar" class="profile-avatar" />
+          <label for="avatar-input" class="profile-avatar-edit" title="Changer la photo">📷</label>
+          <input type="file" id="avatar-input" accept="image/*" style="display:none;" />
+        </div>
+        <div>
+          <h2 id="profile-display-name" style="margin:0;">...</h2>
+          <p class="subtitle" id="profile-email" style="margin:4px 0 0;"></p>
+        </div>
+      </div>
+      <p id="avatar-status" class="subtitle"></p>
+    </div>
+
+    <div class="card">
+      <h2>Informations</h2>
+      <form id="profile-form">
+        <label for="p_name">Nom affiche</label>
+        <input type="text" id="p_name" placeholder="Ton nom" required />
+        <button type="submit">Enregistrer</button>
+        <span id="profile-status" class="subtitle"></span>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    let userId;
+
+    (async () => {
+      const session = await requireAuthAndRenderNav("profile.html");
+      if (!session) return;
+      userId = session.user.id;
+
+      document.getElementById("profile-email").textContent = session.user.email || "";
+
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("full_name, avatar_url")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const avatarImg = document.getElementById("profile-avatar");
+      const fallbackAvatar = "https://api.dicebear.com/7.x/initials/svg?seed=" + encodeURIComponent(profile?.full_name || session.user.email || "U");
+
+      avatarImg.src = profile?.avatar_url || fallbackAvatar;
+      document.getElementById("profile-display-name").textContent = profile?.full_name || "Mon profil";
+      document.getElementById("p_name").value = profile?.full_name || "";
+
+      document.getElementById("profile-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const fullName = document.getElementById("p_name").value.trim();
+        const statusEl = document.getElementById("profile-status");
+
+        const { error } = await supabaseClient
+          .from("profiles")
+          .update({ full_name: fullName })
+          .eq("id", userId);
+
+        if (error) {
+          statusEl.textContent = "Erreur : " + error.message;
+        } else {
+          statusEl.textContent = "Enregistre !";
+          document.getElementById("profile-display-name").textContent = fullName || "Mon profil";
+          setTimeout(() => { statusEl.textContent = ""; }, 2500);
+        }
+      });
+
+      document.getElementById("avatar-input").addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const statusEl = document.getElementById("avatar-status");
+        statusEl.textContent = "Televersement en cours...";
+
+        const ext = file.name.split(".").pop();
+        const path = `${userId}/avatar.${ext}`;
+
+        const { error: uploadError } = await supabaseClient.storage
+          .from("avatars")
+          .upload(path, file, { upsert: true });
+
+        if (uploadError) {
+          statusEl.textContent = "Erreur : " + uploadError.message;
+          return;
+        }
+
+        const { data: urlData } = supabaseClient.storage.from("avatars").getPublicUrl(path);
+        const publicUrl = urlData.publicUrl + "?t=" + Date.now();
+
+        const { error: updateError } = await supabaseClient
+          .from("profiles")
+          .update({ avatar_url: publicUrl })
+          .eq("id", userId);
+
+        if (updateError) {
+          statusEl.textContent = "Erreur : " + updateError.message;
+          return;
+        }
+
+        avatarImg.src = publicUrl;
+        statusEl.textContent = "Photo mise a jour !";
+        setTimeout(() => { statusEl.textContent = ""; }, 2500);
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calendrier - FitFinance AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🗓️ Calendrier</h1>
+    <p class="subtitle">
+      Tes seances, repas et rappels. Demande a <a href="coach.html">Aiden</a> de planifier des seances directement
+      ici, ou ajoute/modifie tes evenements toi-meme.
+    </p>
+
+    <div class="card">
+      <div class="calendar-header">
+        <button type="button" class="secondary" id="cal-prev">←</button>
+        <h2 id="cal-title" style="margin:0;"></h2>
+        <button type="button" class="secondary" id="cal-next">→</button>
+      </div>
+      <div class="calendar-grid" id="calendar-grid"></div>
+    </div>
+
+    <!-- ── AJOUTER / MODIFIER UN EVENEMENT ── -->
+    <div class="card">
+      <h2 id="event-form-title">Ajouter un evenement</h2>
+      <form id="event-form">
+        <div class="row">
+          <div>
+            <label for="e_title">Titre</label>
+            <input type="text" id="e_title" placeholder="Ex: Seance jambes, Souper en famille..." required />
+          </div>
+          <div>
+            <label for="e_date">Date</label>
+            <input type="date" id="e_date" required />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="e_type">Type</label>
+            <select id="e_type">
+              <option value="entrainement">🏋️ Entrainement</option>
+              <option value="repas">🍽️ Repas</option>
+              <option value="finance">💰 Finance</option>
+              <option value="relation">👥 Relation</option>
+              <option value="autre">📌 Autre</option>
+            </select>
+          </div>
+        </div>
+        <label for="e_notes">Notes</label>
+        <textarea id="e_notes" rows="2" placeholder="Optionnel"></textarea>
+        <button type="submit">Enregistrer</button>
+        <button type="button" class="secondary" id="event-cancel" style="display:none;">Annuler</button>
+        <button type="button" class="danger" id="event-delete" style="display:none;">Supprimer</button>
+      </form>
+    </div>
+
+    <!-- ── EVENEMENTS DU JOUR SELECTIONNE ── -->
+    <div class="card">
+      <h2 id="day-events-title">Evenements</h2>
+      <div id="day-events-list"><p class="subtitle">Selectionne un jour dans le calendrier.</p></div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    let userId;
+    let currentMonth = new Date();
+    currentMonth.setDate(1);
+    currentMonth.setHours(0, 0, 0, 0);
+    let monthEvents = [];
+    let selectedDate = null;
+
+    const TYPE_ICONS = {
+      entrainement: "🏋️",
+      repas: "🍽️",
+      finance: "💰",
+      relation: "👥",
+      autre: "📌",
+    };
+
+    function dateStr(d) {
+      return d.toISOString().slice(0, 10);
+    }
+    function todayStr() {
+      return dateStr(new Date());
+    }
+    function fmtDate(d) {
+      return new Date(d).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+    }
+
+    async function loadMonthEvents() {
+      const start = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+      const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
+      const { data } = await supabaseClient
+        .from("calendar_events")
+        .select("*")
+        .eq("user_id", userId)
+        .gte("date", dateStr(start))
+        .lt("date", dateStr(end))
+        .order("date", { ascending: true });
+      monthEvents = data || [];
+    }
+
+    function renderCalendar() {
+      document.getElementById("cal-title").textContent = currentMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+
+      const year = currentMonth.getFullYear();
+      const month = currentMonth.getMonth();
+      const firstDay = new Date(year, month, 1);
+      const startOffset = (firstDay.getDay() + 6) % 7; // lundi = 0
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      const eventsByDate = {};
+      monthEvents.forEach(ev => {
+        if (!eventsByDate[ev.date]) eventsByDate[ev.date] = [];
+        eventsByDate[ev.date].push(ev);
+      });
+
+      const dayLabels = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+      let html = dayLabels.map(d => `<div class="cal-day-label">${d}</div>`).join("");
+
+      for (let i = 0; i < startOffset; i++) {
+        html += `<div class="cal-cell cal-cell-empty"></div>`;
+      }
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const d = new Date(year, month, day);
+        const ds = dateStr(d);
+        const dayEvents = eventsByDate[ds] || [];
+        const isToday = ds === todayStr();
+        const isSelected = ds === selectedDate;
+        html += `
+          <div class="cal-cell ${isToday ? "cal-cell-today" : ""} ${isSelected ? "cal-cell-selected" : ""}" data-date="${ds}">
+            <div class="cal-cell-num">${day}</div>
+            <div class="cal-cell-events">
+              ${dayEvents.slice(0, 3).map(ev => `<div class="cal-event cal-event-${ev.event_type || "autre"}">${TYPE_ICONS[ev.event_type] || "📌"} ${ev.title}</div>`).join("")}
+              ${dayEvents.length > 3 ? `<div class="cal-event-more">+${dayEvents.length - 3}</div>` : ""}
+            </div>
+          </div>
+        `;
+      }
+
+      document.getElementById("calendar-grid").innerHTML = html;
+
+      document.querySelectorAll(".cal-cell[data-date]").forEach(cell => {
+        cell.addEventListener("click", () => selectDay(cell.dataset.date));
+      });
+    }
+
+    function selectDay(ds) {
+      selectedDate = ds;
+      renderCalendar();
+      renderDayEvents();
+      document.getElementById("e_date").value = ds;
+    }
+
+    function renderDayEvents() {
+      const titleEl = document.getElementById("day-events-title");
+      const listEl = document.getElementById("day-events-list");
+
+      if (!selectedDate) {
+        titleEl.textContent = "Evenements";
+        listEl.innerHTML = `<p class="subtitle">Selectionne un jour dans le calendrier.</p>`;
+        return;
+      }
+
+      titleEl.textContent = `Evenements du ${fmtDate(selectedDate)}`;
+      const dayEvents = monthEvents.filter(ev => ev.date === selectedDate);
+
+      if (!dayEvents.length) {
+        listEl.innerHTML = `<p class="subtitle">Aucun evenement ce jour-la.</p>`;
+        return;
+      }
+
+      listEl.innerHTML = dayEvents.map(ev => `
+        <div class="contact-row">
+          <div class="contact-info">
+            <strong>${TYPE_ICONS[ev.event_type] || "📌"} ${ev.title}</strong>
+            ${ev.notes ? `<span class="subtitle" style="margin:0;">${ev.notes}</span>` : ""}
+          </div>
+          <button type="button" class="secondary" data-edit-event="${ev.id}">Modifier</button>
+        </div>
+      `).join("");
+
+      listEl.querySelectorAll("[data-edit-event]").forEach(btn => {
+        btn.addEventListener("click", () => startEditEvent(btn.dataset.editEvent));
+      });
+    }
+
+    function startEditEvent(id) {
+      const ev = monthEvents.find(e => e.id === id);
+      if (!ev) return;
+      document.getElementById("event-form-title").textContent = "Modifier l'evenement";
+      document.getElementById("e_title").value = ev.title;
+      document.getElementById("e_date").value = ev.date;
+      document.getElementById("e_type").value = ev.event_type || "autre";
+      document.getElementById("e_notes").value = ev.notes || "";
+      document.getElementById("event-form").dataset.editId = ev.id;
+      document.getElementById("event-cancel").style.display = "inline-block";
+      document.getElementById("event-delete").style.display = "inline-block";
+      document.getElementById("event-form").scrollIntoView({ behavior: "smooth" });
+    }
+
+    function resetEventForm() {
+      document.getElementById("event-form-title").textContent = "Ajouter un evenement";
+      document.getElementById("event-form").reset();
+      if (selectedDate) document.getElementById("e_date").value = selectedDate;
+      delete document.getElementById("event-form").dataset.editId;
+      document.getElementById("event-cancel").style.display = "none";
+      document.getElementById("event-delete").style.display = "none";
+    }
+
+    async function refresh() {
+      await loadMonthEvents();
+      renderCalendar();
+      renderDayEvents();
+    }
+
+    (async () => {
+      const session = await requireAuthAndRenderNav("calendar.html");
+      if (!session) return;
+      userId = session.user.id;
+
+      document.getElementById("e_date").valueAsDate = new Date();
+
+      document.getElementById("cal-prev").addEventListener("click", async () => {
+        currentMonth.setMonth(currentMonth.getMonth() - 1);
+        await refresh();
+      });
+      document.getElementById("cal-next").addEventListener("click", async () => {
+        currentMonth.setMonth(currentMonth.getMonth() + 1);
+        await refresh();
+      });
+
+      document.getElementById("event-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const editId = e.target.dataset.editId;
+        const payload = {
+          user_id: userId,
+          title: document.getElementById("e_title").value,
+          date: document.getElementById("e_date").value,
+          event_type: document.getElementById("e_type").value,
+          notes: document.getElementById("e_notes").value || null,
+        };
+        if (editId) {
+          await supabaseClient.from("calendar_events").update(payload).eq("id", editId);
+        } else {
+          await supabaseClient.from("calendar_events").insert(payload);
+        }
+        resetEventForm();
+        await refresh();
+      });
+
+      document.getElementById("event-cancel").addEventListener("click", resetEventForm);
+      document.getElementById("event-delete").addEventListener("click", async (e) => {
+        const editId = document.getElementById("event-form").dataset.editId;
+        if (!editId) return;
+        await supabaseClient.from("calendar_events").delete().eq("id", editId);
+        resetEventForm();
+        await refresh();
+      });
+
+      await refresh();
+    })();
+  </script>
+</body>
+</html>

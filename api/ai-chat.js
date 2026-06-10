@@ -68,6 +68,12 @@ et propose des actions concretes (ex: "Appelle Marie cette semaine, ca fait 20 j
 pour ajouter un nouveau contact si l'utilisateur t'en parle, et log_contact_interaction pour enregistrer
 qu'il a contacte quelqu'un aujourd'hui.
 
+CALENDRIER :
+L'utilisateur a un calendrier personnel (page Calendrier). Utilise add_calendar_event pour y planifier des
+seances de sport, repas ou rappels lorsque c'est pertinent (ex: si l'utilisateur te demande de planifier sa
+semaine d'entrainement, ajoute une entree par seance avec event_type "entrainement"). L'utilisateur peut
+aussi modifier son calendrier manuellement.
+
 DEPENSES RECURRENTES :
 L'utilisateur peut avoir des depenses/revenus recurrents (loyer, abonnements, salaire) geres via
 set_recurring_transaction. Prends-les en compte (disponibles dans get_recent_data) quand tu analyses
@@ -302,6 +308,20 @@ const tools = [
         date: { type: "string", description: "Date au format YYYY-MM-DD, par defaut aujourd'hui" },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "add_calendar_event",
+    description: "Ajoute un evenement au calendrier de l'utilisateur (ex: planifier une seance de sport, un repas, un rappel).",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        date: { type: "string", description: "Date au format YYYY-MM-DD" },
+        event_type: { type: "string", description: "entrainement, repas, finance, relation ou autre" },
+        notes: { type: "string" },
+      },
+      required: ["title", "date"],
     },
   },
   {
@@ -649,6 +669,16 @@ module.exports = async (req, res) => {
           .eq("id", match.id);
         return error ? { error: error.message } : { success: true, contact: match.name };
       }
+      case "add_calendar_event": {
+        const { error } = await supabase.from("calendar_events").insert({
+          user_id: userId,
+          title: input.title,
+          date: input.date,
+          event_type: input.event_type ?? "autre",
+          notes: input.notes ?? null,
+        });
+        return error ? { error: error.message } : { success: true };
+      }
       case "set_recurring_transaction": {
         const { data: existing } = await supabase
           .from("finance_recurring")
@@ -683,6 +713,29 @@ module.exports = async (req, res) => {
     }
   }
 
+  function notificationMessage(name, input, result) {
+    if (result?.error) return null;
+    switch (name) {
+      case "add_body_metric": return "Aiden a enregistre une nouvelle mesure corporelle.";
+      case "add_workout": return `Aiden a ajoute une seance "${input.name}" au ${input.date}.`;
+      case "save_training_program": return `Aiden a cree un nouveau programme d'entrainement : "${input.title}".`;
+      case "save_meal_plan": return `Aiden a sauvegarde un nouveau plan alimentaire : "${input.title}".`;
+      case "save_today_meals": return "Aiden a planifie les repas du jour.";
+      case "save_shopping_list": return "Aiden a mis a jour la liste de courses.";
+      case "set_nutrition_targets": return "Aiden a ajuste tes objectifs nutritionnels.";
+      case "add_transaction": return `Aiden a ajoute une transaction : ${input.description || input.category} (${input.amount}$).`;
+      case "set_budget": return `Aiden a mis a jour le budget "${input.category}".`;
+      case "set_savings_goal": return "Aiden a mis a jour ton objectif d'epargne.";
+      case "add_contact": return `Aiden a ajoute "${input.name}" a tes contacts.`;
+      case "log_contact_interaction": return `Aiden a enregistre un contact avec ${result?.contact || input.name}.`;
+      case "set_recurring_transaction": return input.delete
+        ? `Aiden a supprime la depense recurrente "${input.label}".`
+        : `Aiden a mis a jour la depense recurrente "${input.label}".`;
+      case "add_calendar_event": return `Aiden a ajoute "${input.title}" a ton calendrier le ${input.date}.`;
+      default: return null;
+    }
+  }
+
   try {
     let finalText = "";
 
@@ -707,6 +760,7 @@ module.exports = async (req, res) => {
       messages.push({ role: "assistant", content: response.content });
 
       const toolResults = [];
+      const notifMessages = [];
       for (const toolUse of toolUses) {
         const result = await executeTool(toolUse.name, toolUse.input || {});
         toolResults.push({
@@ -714,8 +768,16 @@ module.exports = async (req, res) => {
           tool_use_id: toolUse.id,
           content: JSON.stringify(result),
         });
+        const notifMsg = notificationMessage(toolUse.name, toolUse.input || {}, result);
+        if (notifMsg) notifMessages.push(notifMsg);
       }
       messages.push({ role: "user", content: toolResults });
+
+      if (notifMessages.length > 0) {
+        await supabase.from("notifications").insert(
+          notifMessages.map(message => ({ user_id: userId, message }))
+        );
+      }
     }
 
     if (!finalText) {
