@@ -985,6 +985,9 @@ module.exports = async (req, res) => {
     }
   }
 
+  const DEBUG_TOOLS = ["save_training_program", "save_shopping_list", "save_meal_plan", "save_today_meals", "update_preferences"];
+  const debugLog = [];
+
   try {
     let finalText = "";
     let forcedContinuations = 0;
@@ -1036,6 +1039,9 @@ module.exports = async (req, res) => {
           tool_use_id: toolUse.id,
           content: JSON.stringify(result),
         });
+        if (DEBUG_TOOLS.includes(toolUse.name)) {
+          debugLog.push({ tool: toolUse.name, result });
+        }
         const notifMsg = notificationMessage(toolUse.name, toolUse.input || {}, result);
         if (notifMsg) notifMessages.push(notifMsg);
       }
@@ -1063,6 +1069,14 @@ module.exports = async (req, res) => {
 
     if (!finalText) {
       finalText = "Desole, je n'ai pas pu generer de reponse. Peux-tu reformuler ta demande ?";
+    }
+
+    // Bloc de debug temporaire : montre le resultat brut (non filtre par le modele)
+    // des outils de sauvegarde appeles durant ce tour, pour diagnostiquer les
+    // problemes de sauvegarde/affichage.
+    if (debugLog.length > 0) {
+      finalText += "\n\n---\n🔧 **Debug (resultats bruts des outils)**\n```json\n" +
+        JSON.stringify(debugLog, null, 2) + "\n```";
     }
 
     // Sauvegarde de l'historique de conversation
