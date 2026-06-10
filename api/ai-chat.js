@@ -1,8 +1,8 @@
 // ============================================================
-// Fonction Netlify : Coach IA (Claude) avec acces complet
+// Fonction Vercel (serverless) : Coach IA (Claude) avec acces complet
 // aux donnees Sport / Finance de l'utilisateur authentifie.
 //
-// Variables d'environnement requises (Netlify > Site settings > Environment):
+// Variables d'environnement requises (Vercel > Project > Settings > Environment Variables):
 //   ANTHROPIC_API_KEY        -> cle API Anthropic
 //   SUPABASE_URL             -> URL du projet Supabase
 //   SUPABASE_SERVICE_ROLE_KEY-> cle "service_role" (secrete, jamais cote client)
@@ -116,41 +116,35 @@ const tools = [
   },
 ];
 
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: JSON.stringify({ error: "Methode non autorisee" }) };
+module.exports = async (req, res) => {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Methode non autorisee" });
   }
 
-  const authHeader = event.headers.authorization || event.headers.Authorization;
+  const authHeader = req.headers.authorization || req.headers.Authorization;
   if (!authHeader?.startsWith("Bearer ")) {
-    return { statusCode: 401, body: JSON.stringify({ error: "Non authentifie" }) };
+    return res.status(401).json({ error: "Non authentifie" });
   }
   const accessToken = authHeader.replace("Bearer ", "");
 
-  // Client "utilisateur" : valide le token et respecte les RLS
+  // Client "utilisateur" : valide le token
   const supabaseUser = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
   });
 
   const { data: userData, error: userError } = await supabaseUser.auth.getUser(accessToken);
   if (userError || !userData?.user) {
-    return { statusCode: 401, body: JSON.stringify({ error: "Session invalide" }) };
+    return res.status(401).json({ error: "Session invalide" });
   }
   const userId = userData.user.id;
 
   // Client "service" : acces complet, on filtre nous-memes par user_id
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  let body;
-  try {
-    body = JSON.parse(event.body || "{}");
-  } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: "JSON invalide" }) };
-  }
-
+  const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
   const incomingMessages = Array.isArray(body.messages) ? body.messages : [];
   if (incomingMessages.length === 0) {
-    return { statusCode: 400, body: JSON.stringify({ error: "Aucun message fourni" }) };
+    return res.status(400).json({ error: "Aucun message fourni" });
   }
 
   const lastUserMessage = [...incomingMessages].reverse().find(m => m.role === "user");
@@ -300,16 +294,9 @@ exports.handler = async (event) => {
       ]);
     }
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reply: finalText }),
-    };
+    return res.status(200).json({ reply: finalText });
   } catch (err) {
     console.error(err);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Erreur lors de l'appel a l'IA: " + err.message }),
-    };
+    return res.status(500).json({ error: "Erreur lors de l'appel a l'IA: " + err.message });
   }
 };

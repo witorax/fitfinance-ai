@@ -6,9 +6,9 @@ par un Coach IA (Claude) qui peut lire et modifier tes donnees.
 
 ## Stack
 
-- **Frontend** : HTML/CSS/JS simple (pas de build), heberge sur Netlify
+- **Frontend** : HTML/CSS/JS simple (pas de build), heberge sur Vercel
 - **Base de donnees / Auth** : Supabase (Postgres + Auth + RLS)
-- **IA** : Claude (Anthropic), via une fonction serverless Netlify
+- **IA** : Claude (Anthropic), via une fonction serverless Vercel (`/api/ai-chat`)
 
 ## 1. Configurer Supabase
 
@@ -27,30 +27,31 @@ par un Coach IA (Claude) qui peut lire et modifier tes donnees.
 
 1. Va sur [console.anthropic.com](https://console.anthropic.com/settings/keys)
    et cree une cle API.
-2. Garde-la, elle sera mise dans les variables d'environnement Netlify (jamais
+2. Garde-la, elle sera mise dans les variables d'environnement Vercel (jamais
    dans le code).
 
-## 3. Deployer sur Netlify
+## 3. Deployer sur Vercel
 
 1. Pousse ce projet sur un depot GitHub.
-2. Sur [app.netlify.com](https://app.netlify.com), clique **Add new site >
-   Import an existing project** et selectionne le depot.
-3. Netlify detectera `netlify.toml` (publish = `.`, functions = `netlify/functions`).
-4. Dans **Site settings > Environment variables**, ajoute :
+2. Sur [vercel.com](https://vercel.com), clique **Add New > Project** et
+   importe le depot.
+3. Vercel detecte automatiquement les fichiers HTML statiques a la racine et
+   les fonctions serverless dans `api/`.
+4. Dans **Project Settings > Environment Variables**, ajoute :
    - `ANTHROPIC_API_KEY` = ta cle Anthropic
    - `SUPABASE_URL` = l'URL de ton projet Supabase
    - `SUPABASE_SERVICE_ROLE_KEY` = la cle service_role Supabase
 5. Deploie. Le site est servi statiquement et la fonction IA est disponible
-   sur `/.netlify/functions/ai-chat`.
+   sur `/api/ai-chat`.
 
 ## 4. Tester en local
 
 ```bash
 npm install
-npx netlify dev
+npx vercel dev
 ```
 
-`netlify dev` lit le fichier `.env` (a creer a partir de `.env.example`) pour
+`vercel dev` lit le fichier `.env` (a creer a partir de `.env.example`) pour
 les variables d'environnement de la fonction, et sert les pages HTML.
 
 ## Structure du projet
@@ -63,7 +64,7 @@ finance.html          -> Transactions, budgets
 coach.html            -> Chat avec le Coach IA
 js/config.js          -> Configuration Supabase (URL + cle anon)
 js/nav.js             -> Navigation + verification d'authentification
-netlify/functions/ai-chat.js -> Fonction serverless : appelle Claude avec
+api/ai-chat.js         -> Fonction serverless : appelle Claude avec
                                   acces complet (lecture/ecriture) aux
                                   donnees de l'utilisateur authentifie
 sql/schema.sql        -> Schema complet Supabase (tables + RLS)
@@ -74,6 +75,6 @@ sql/schema.sql        -> Schema complet Supabase (tables + RLS)
 - La cle `anon` Supabase est publique par design (les donnees sont protegees
   par les policies RLS : chaque utilisateur ne voit que ses propres lignes).
 - La cle `service_role` Supabase et la cle Anthropic restent **uniquement**
-  dans les variables d'environnement Netlify, jamais dans le code cote client.
+  dans les variables d'environnement Vercel, jamais dans le code cote client.
 - La fonction `ai-chat` verifie le token de session de l'utilisateur avant de
   faire quoi que ce soit en son nom.
