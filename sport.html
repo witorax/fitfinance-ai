@@ -19,6 +19,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
   <div class="container">
@@ -144,6 +145,19 @@
     </div>
 
     <div class="card">
+      <h2>📈 Progression par exercice</h2>
+      <p class="subtitle">L'evolution du poids souleve dans le temps. Enregistre tes poids depuis le programme pour alimenter la courbe.</p>
+      <div id="chart-exercise-wrap" style="margin-bottom:12px;">
+        <label for="chart-exercise">Exercice</label>
+        <select id="chart-exercise"></select>
+      </div>
+      <div style="position:relative; height:260px;">
+        <canvas id="progress-chart"></canvas>
+      </div>
+      <p class="subtitle" id="chart-empty" style="display:none;">Pas encore de donnees pour cet exercice.</p>
+    </div>
+
+    <div class="card">
       <h2>Ajouter une mesure</h2>
       <form id="metric-form">
         <div class="row">
@@ -201,6 +215,14 @@
         <thead><tr><th>Date</th><th>Nom</th><th>Kcal</th><th>Notes</th><th></th></tr></thead>
         <tbody id="workouts-body"></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- ── MODE SEANCE GUIDEE (overlay) ── -->
+  <div id="gs-overlay" class="gs-overlay" style="display:none;">
+    <div class="gs-card">
+      <button type="button" class="gs-close" onclick="gsClose()" title="Quitter la seance">✕</button>
+      <div id="gs-content"></div>
     </div>
   </div>
 
@@ -684,10 +706,23 @@
         .order("date", { ascending: false })
         .order("created_at", { ascending: false });
 
+      currentProgram = program;
+
       const lastByExercise = {};
+      const histByExercise = {};
       (logs || []).forEach(l => {
         if (!lastByExercise[l.exercise_name]) lastByExercise[l.exercise_name] = l;
+        (histByExercise[l.exercise_name] = histByExercise[l.exercise_name] || []).push(l);
       });
+
+      // Surcharge progressive : meme poids sur les 2 dernieres seances -> suggerer +2,5 kg
+      function overloadHint(exName) {
+        const h = (histByExercise[exName] || []).filter(x => x.weight_kg != null);
+        if (h.length >= 2 && Number(h[0].weight_kg) === Number(h[1].weight_kg)) {
+          return `<span class="overload-hint">💡 Essaie ${(Number(h[0].weight_kg) + 2.5).toFixed(1).replace(".0", "")} kg</span>`;
+        }
+        return "";
+      }
 
       const todayIdx = (new Date().getDay() + 6) % 7; // 0 = Lundi
       const today = new Date().toISOString().slice(0, 10);
@@ -724,6 +759,7 @@
                   <input type="number" placeholder="Reps" class="reps-input" id="r_${exId}" value="${last?.reps ?? ""}">
                   <button type="button" class="secondary" onclick="saveExerciseLog('${ex.name.replace(/'/g, "\\'")}','${exId}')">Sauver</button>
                   ${last ? `<span class="last-log">Dernier: ${last.weight_kg ?? "-"}kg${last.reps ? " x " + last.reps : ""} (${fmtDate(last.date)})</span>` : ""}
+                  ${overloadHint(ex.name)}
                 </div>
               </div>
             `;
@@ -743,6 +779,7 @@
             <div class="prog-acc-body">
               ${exHtml}
               ${(!day.rest && isToday) ? `
+                ${!alreadyDone ? `<button type="button" class="secondary" style="width:100%; margin-top:14px;" onclick="startGuidedSession()">▶ Demarrer la seance guidee</button>` : ""}
                 <button type="button" class="validate-session-btn" ${alreadyDone ? "disabled" : ""} onclick="confirmWorkoutDay('${(day.day_name || DAY_NAMES[idx]).replace(/'/g,"\\'")}', this)">
                   ${alreadyDone ? "✓ Seance validee — streak +1 🔥" : "🔥 Valider la seance du jour"}
                 </button>
@@ -766,6 +803,7 @@
       });
       loadProgram();
       loadRecords();
+      loadProgressionChart();
     }
 
     // ── RECORDS PERSONNELS ──
@@ -813,6 +851,198 @@
           loadProgram();
         });
       });
+    }
+
+    // ── GRAPHIQUE DE PROGRESSION PAR EXERCICE ──
+    let progressChart = null;
+    async function loadProgressionChart() {
+      const { data } = await supabaseClient
+        .from("exercise_logs")
+        .select("exercise_name, weight_kg, date")
+        .eq("user_id", userId)
+        .not("weight_kg", "is", null)
+        .order("date", { ascending: true });
+
+      const byEx = {};
+      (data || []).forEach(l => (byEx[l.exercise_name] = byEx[l.exercise_name] || []).push(l));
+      const names = Object.keys(byEx).sort((a, b) => a.localeCompare(b));
+
+      const sel = document.getElementById("chart-exercise");
+      const prev = sel.value;
+      sel.innerHTML = names.map(n => `<option>${n}</option>`).join("");
+      if (names.includes(prev)) sel.value = prev;
+      sel.onchange = () => renderProgressChart(byEx[sel.value] || []);
+      renderProgressChart(byEx[sel.value] || []);
+    }
+
+    function renderProgressChart(logs) {
+      document.getElementById("chart-empty").style.display = logs.length ? "none" : "block";
+      const ctx = document.getElementById("progress-chart");
+      if (progressChart) progressChart.destroy();
+      progressChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: logs.map(l => fmtDate(l.date)),
+          datasets: [{
+            label: "Poids (kg)",
+            data: logs.map(l => Number(l.weight_kg)),
+            borderColor: "#8b5cf6",
+            backgroundColor: "rgba(139, 92, 246, 0.18)",
+            fill: true,
+            tension: 0.35,
+            pointBackgroundColor: "#22d3ee",
+            pointBorderColor: "#22d3ee",
+            pointRadius: 4,
+          }],
+        },
+        options: {
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#9298ab" }, grid: { color: "rgba(255,255,255,0.06)" } },
+            y: { ticks: { color: "#9298ab" }, grid: { color: "rgba(255,255,255,0.06)" } },
+          },
+        },
+      });
+    }
+
+    // ── MODE SEANCE GUIDEE ──
+    let currentProgram = null;
+    let gsState = null;
+
+    function parseRestSeconds(txt) {
+      if (!txt) return 90;
+      const str = String(txt).toLowerCase();
+      let secs = 0;
+      const m = str.match(/(\d+)\s*min/);
+      const s = str.match(/(\d+)\s*s(ec)?/);
+      if (m) secs += parseInt(m[1], 10) * 60;
+      if (s) secs += parseInt(s[1], 10);
+      if (!secs) {
+        const n = str.match(/\d+/);
+        if (n) {
+          const v = parseInt(n[0], 10);
+          secs = v <= 10 ? v * 60 : v; // "2" -> 2 min ; "90" -> 90 s
+        }
+      }
+      return secs || 90;
+    }
+
+    function startGuidedSession() {
+      const todayIdx = (new Date().getDay() + 6) % 7;
+      const day = currentProgram?.days?.[todayIdx];
+      if (!day || day.rest || !(day.exercises || []).length) return;
+      ensureAudio();
+      gsState = { day, exIdx: 0, setNum: 1, lastWeight: null };
+      document.getElementById("gs-overlay").style.display = "flex";
+      gsRender();
+    }
+
+    function gsRender() {
+      const { day, exIdx, setNum } = gsState;
+      const ex = day.exercises[exIdx];
+      const sets = parseInt(ex.sets, 10) || 3;
+      document.getElementById("gs-content").innerHTML = `
+        <div class="subtitle" style="margin:0;">Exercice ${exIdx + 1} / ${day.exercises.length}</div>
+        <h2 style="margin:6px 0 2px;">${ex.name}</h2>
+        <div class="subtitle" style="margin:0 0 4px;">${ex.sets ? ex.sets + " x " : ""}${ex.reps || ""}${ex.rest_time ? " · repos " + ex.rest_time : ""}</div>
+        ${ex.notes ? `<div class="subtitle" style="margin:0;">${ex.notes}</div>` : ""}
+        <div class="gs-set">Serie <strong>${setNum} / ${sets}</strong></div>
+        <div class="weight-log-row" style="justify-content:center;">
+          <input type="number" step="0.5" id="gs-weight" placeholder="Poids (kg)" class="weight-input" value="${gsState.lastWeight ?? ""}">
+          <input type="number" id="gs-reps" placeholder="Reps" class="reps-input">
+        </div>
+        <button type="button" class="validate-session-btn" onclick="gsSetDone()">✓ Serie terminee</button>
+        <button type="button" class="secondary" style="width:100%; margin-top:8px;" onclick="gsNextExercise()">Exercice suivant ⏭</button>
+      `;
+    }
+
+    async function gsSetDone() {
+      const { day, exIdx } = gsState;
+      const ex = day.exercises[exIdx];
+      const sets = parseInt(ex.sets, 10) || 3;
+      const w = document.getElementById("gs-weight").value;
+      const r = document.getElementById("gs-reps").value;
+      if (w) gsState.lastWeight = w;
+      if (gsState.setNum < sets) {
+        gsState.setNum++;
+        gsRest(parseRestSeconds(ex.rest_time), () => gsRender());
+      } else {
+        if (w) {
+          await supabaseClient.from("exercise_logs").insert({
+            user_id: userId,
+            exercise_name: ex.name,
+            date: new Date().toISOString().slice(0, 10),
+            weight_kg: w,
+            reps: r || null,
+          });
+        }
+        gsNextExercise();
+      }
+    }
+
+    function gsNextExercise() {
+      if (!gsState) return;
+      if (gsState.exIdx < gsState.day.exercises.length - 1) {
+        gsState.exIdx++;
+        gsState.setNum = 1;
+        gsState.lastWeight = null;
+        gsRender();
+      } else {
+        gsFinish();
+      }
+    }
+
+    function gsRest(seconds, cb) {
+      let remain = seconds;
+      const el = document.getElementById("gs-content");
+      const render = () => {
+        el.innerHTML = `
+          <h2 style="margin:6px 0;">😮‍💨 Repos</h2>
+          <div class="timer-display">${String(Math.floor(remain / 60)).padStart(2, "0")}:${String(remain % 60).padStart(2, "0")}</div>
+          <p class="subtitle">Prochaine serie dans...</p>
+          <button type="button" class="secondary" style="width:100%;" onclick="window.__gsSkipRest()">Passer le repos ⏭</button>
+        `;
+      };
+      render();
+      const iv = setInterval(() => {
+        remain--;
+        if (remain <= 3 && remain > 0) soundTick();
+        if (remain <= 0) {
+          clearInterval(iv);
+          soundPhase();
+          cb();
+          return;
+        }
+        render();
+      }, 1000);
+      window.__gsSkipRest = () => { clearInterval(iv); cb(); };
+    }
+
+    async function gsFinish() {
+      const todayIdx = (new Date().getDay() + 6) % 7;
+      const dayName = gsState.day.day_name || DAY_NAMES[todayIdx];
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: existing } = await supabaseClient
+        .from("workouts").select("id").eq("user_id", userId).eq("date", today).eq("name", dayName).limit(1);
+      if (!existing || existing.length === 0) {
+        await supabaseClient.from("workouts").insert({
+          user_id: userId, date: today, name: dayName, notes: "Seance guidee terminee",
+        });
+      }
+      soundDone();
+      notifyTimerDone("🎉 Seance terminee et validee, streak +1 ! 🔥");
+      document.getElementById("gs-content").innerHTML = `
+        <h2 style="margin:6px 0;">🎉 Seance terminee !</h2>
+        <p class="subtitle">Bravo ! Ta seance est validee et ta streak a augmente. 🔥</p>
+        <button type="button" class="validate-session-btn" onclick="gsClose()">Fermer</button>
+      `;
+      loadProgram(); loadStats(); loadWorkouts(); loadRecords(); loadProgressionChart();
+    }
+
+    function gsClose() {
+      document.getElementById("gs-overlay").style.display = "none";
+      gsState = null;
     }
 
     async function confirmWorkoutDay(dayName, btn) {
@@ -878,6 +1108,7 @@
       loadStats();
       loadProgram();
       loadRecords();
+      loadProgressionChart();
     })();
   </script>
 </body>

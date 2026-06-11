@@ -131,6 +131,24 @@
         .gte("date", programStart.toISOString().slice(0, 10));
 
       const dates = (workouts || []).map(w => w.date);
+      const workoutDateSet = new Set(dates);
+
+      // Streak : seances validees consecutives (jours de repos ignores)
+      let streak = 0;
+      if (program) {
+        const d = new Date(); d.setHours(0, 0, 0, 0);
+        const pStart = new Date(program.start_date); pStart.setHours(0, 0, 0, 0);
+        let isFirstDay = true;
+        while (d >= pStart) {
+          const dayDef = (program.days || [])[(d.getDay() + 6) % 7];
+          if (dayDef && !dayDef.rest) {
+            if (workoutDateSet.has(d.toISOString().slice(0, 10))) streak++;
+            else if (!isFirstDay) break;
+          }
+          isFirstDay = false;
+          d.setDate(d.getDate() - 1);
+        }
+      }
 
       // Jours de cette semaine respectes
       const thisWeekStr = thisWeekStart.toISOString().slice(0, 10);
@@ -208,6 +226,7 @@
         .limit(6);
 
       el.innerHTML = `
+        ${program ? `<div style="margin-bottom:14px;"><span class="streak-pill">🔥 Streak : ${streak} jour${streak > 1 ? "s" : ""}</span></div>` : ""}
         <h3 style="margin:0 0 4px; font-size:14px; -webkit-text-fill-color:var(--text); background:none;">Cycle de 30 jours</h3>
         <div class="pb-row">
           <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">

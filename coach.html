@@ -142,6 +142,23 @@
 
       await loadHistory();
 
+      // Resume hebdomadaire automatique : chaque dimanche, Aiden genere un bilan
+      // de la semaine (une seule fois par semaine).
+      try {
+        const { data: prof } = await supabaseClient
+          .from("profiles").select("last_weekly_summary").eq("id", userId).maybeSingle();
+        const today = new Date();
+        const todayStr = today.toISOString().slice(0, 10);
+        const isSunday = today.getDay() === 0;
+        const last = prof?.last_weekly_summary ? new Date(prof.last_weekly_summary) : null;
+        const daysSinceLast = last ? Math.floor((today - last) / 86400000) : Infinity;
+        if (isSunday && daysSinceLast >= 7) {
+          await supabaseClient.from("profiles").update({ last_weekly_summary: todayStr }).eq("id", userId);
+          document.getElementById("chat-input").value = "Fais-moi mon resume hebdomadaire complet.";
+          sendMessage();
+        }
+      } catch (e) { /* colonne pas encore creee : ignorer */ }
+
       document.getElementById("send-btn").addEventListener("click", sendMessage);
       document.getElementById("chat-input").addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {

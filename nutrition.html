@@ -73,6 +73,8 @@
         "Planifie mes repas d'aujourd'hui selon ma depense energetique".
       </p>
       <div id="today-meals-list"></div>
+      <button type="button" class="secondary" id="repeat-yesterday-btn" style="margin-top:12px;">🔁 Reprendre les repas d'hier</button>
+      <span id="repeat-msg" class="subtitle" style="margin-left:8px;"></span>
     </div>
 
     <!-- ── LISTE DE COURSES ── -->
@@ -360,6 +362,38 @@
         await supabaseClient.from("profiles").update({ grocery_budget_weekly: value }).eq("id", userId);
         profile.grocery_budget_weekly = value;
         loadShoppingList();
+      });
+
+      // Copier les repas d'hier vers aujourd'hui
+      document.getElementById("repeat-yesterday-btn").addEventListener("click", async () => {
+        const msg = document.getElementById("repeat-msg");
+        const today = new Date().toISOString().slice(0, 10);
+        const y = new Date(); y.setDate(y.getDate() - 1);
+        const yesterday = y.toISOString().slice(0, 10);
+
+        const { data: yMeals } = await supabaseClient
+          .from("meal_plan_items")
+          .select("meal_type, name, calories, protein, carbs, fat, quantity")
+          .eq("user_id", userId)
+          .eq("date", yesterday);
+
+        if (!yMeals || yMeals.length === 0) {
+          msg.textContent = "Aucun repas planifie hier.";
+          return;
+        }
+
+        const { data: existing } = await supabaseClient
+          .from("meal_plan_items").select("id").eq("user_id", userId).eq("date", today).limit(1);
+        if (existing && existing.length > 0 && !confirm("Des repas existent deja aujourd'hui. Ajouter quand meme ceux d'hier ?")) {
+          return;
+        }
+
+        await supabaseClient.from("meal_plan_items").insert(
+          yMeals.map(m => ({ ...m, user_id: userId, date: today, eaten: false }))
+        );
+        msg.textContent = `${yMeals.length} repas copie(s) ✓`;
+        loadTodayMeals();
+        loadMacros();
       });
     })();
   </script>

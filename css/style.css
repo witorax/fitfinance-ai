@@ -906,6 +906,64 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
 }
 .record-del:hover { background: linear-gradient(135deg, #fb7185, #f43f5e); color: white; }
 
+/* ── Surcharge progressive ── */
+.overload-hint {
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+
+/* ── Mode seance guidee (sport.html) ── */
+.gs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 8, 16, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.gs-card {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  background: #141625;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#141625, #141625) padding-box,
+    var(--gradient) border-box;
+  border-radius: var(--radius);
+  padding: 28px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.gs-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+  box-shadow: none;
+}
+.gs-set {
+  margin: 16px 0 10px;
+  font-size: 18px;
+}
+
 /* ── Decompte (sport.html) ── */
 .cd-presets {
   display: flex;

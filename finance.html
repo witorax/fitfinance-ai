@@ -17,6 +17,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="FitFinance" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
   <div class="container">
@@ -35,6 +36,14 @@
         <div class="value" id="stat-balance">--</div>
         <div class="label">Solde du mois ($)</div>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>📊 Depenses par categorie (mois en cours)</h2>
+      <div style="position:relative; height:260px; max-width:420px; margin:0 auto;">
+        <canvas id="category-chart"></canvas>
+      </div>
+      <p class="subtitle" id="category-chart-empty" style="display:none; text-align:center;">Aucune depense ce mois-ci.</p>
     </div>
 
     <div class="card">
@@ -200,6 +209,48 @@
       const balEl = document.getElementById("stat-balance");
       balEl.textContent = balance.toFixed(2);
       balEl.className = "value " + (balance >= 0 ? "amount-positive" : "amount-negative");
+    }
+
+    // ── GRAPHIQUE DEPENSES PAR CATEGORIE ──
+    let categoryChart = null;
+    async function loadCategoryChart() {
+      const { data } = await supabaseClient
+        .from("finance_transactions")
+        .select("category, amount")
+        .eq("user_id", userId)
+        .gte("date", startOfMonthStr());
+
+      const byCat = {};
+      (data || []).forEach(t => {
+        const a = Number(t.amount);
+        if (a < 0) byCat[t.category || "Autre"] = (byCat[t.category || "Autre"] || 0) + Math.abs(a);
+      });
+      const cats = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]);
+
+      const emptyEl = document.getElementById("category-chart-empty");
+      emptyEl.style.display = cats.length ? "none" : "block";
+
+      const palette = ["#6366f1", "#8b5cf6", "#22d3ee", "#34d399", "#fbbf24", "#fb7185", "#f472b6", "#a3e635", "#60a5fa", "#fb923c"];
+      if (categoryChart) categoryChart.destroy();
+      categoryChart = new Chart(document.getElementById("category-chart"), {
+        type: "doughnut",
+        data: {
+          labels: cats,
+          datasets: [{
+            data: cats.map(c => byCat[c].toFixed(2)),
+            backgroundColor: cats.map((_, i) => palette[i % palette.length]),
+            borderColor: "#0a0c14",
+            borderWidth: 2,
+          }],
+        },
+        options: {
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: "right", labels: { color: "#f3f4f8", boxWidth: 14, padding: 10 } },
+            tooltip: { callbacks: { label: ctx => ` ${ctx.label} : ${ctx.parsed} $` } },
+          },
+        },
+      });
     }
 
     async function loadBudgets() {
@@ -382,6 +433,7 @@
         loadTransactions();
         loadStats();
         loadBudgets();
+        loadCategoryChart();
       });
 
       document.getElementById("budget-form").addEventListener("submit", async (e) => {
@@ -398,6 +450,7 @@
       loadTransactions();
       loadStats();
       loadBudgets();
+      loadCategoryChart();
     })();
   </script>
 </body>
