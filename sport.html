@@ -104,6 +104,7 @@
         <h2 style="margin:0;">🏋️ Programme d'entrainement</h2>
       </div>
       <p class="subtitle">Va sur la page <a href="coach.html">Aiden</a> et demande : "Genere-moi un programme d'entrainement complet".</p>
+      <div id="missed-banner"></div>
       <div id="program-content"><p class="subtitle">Aucun programme actif pour le moment.</p></div>
     </div>
 
@@ -179,6 +180,7 @@
   <script src="js/markdown.js"></script>
   <script>
     let userId;
+    let profileData = null;
     const DAY_NAMES = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 
     function fmtDate(d) {
@@ -392,6 +394,92 @@
       return "https://www.youtube.com/results?search_query=" + encodeURIComponent(query || "tutoriel exercice musculation");
     }
 
+    function dateStr(d) { return d.toISOString().slice(0, 10); }
+
+    // Streak : jours d'entrainement valides consecutifs (les jours de repos ne comptent
+    // pas et ne cassent pas la serie ; aujourd'hui non valide ne casse pas encore).
+    function computeStreak(program, workoutDates) {
+      let streak = 0;
+      const d = new Date(); d.setHours(0, 0, 0, 0);
+      const start = new Date(program.start_date); start.setHours(0, 0, 0, 0);
+      let isFirstDay = true;
+      while (d >= start) {
+        const idx = (d.getDay() + 6) % 7;
+        const day = (program.days || [])[idx];
+        if (day && !day.rest) {
+          if (workoutDates.has(dateStr(d))) streak++;
+          else if (!isFirstDay) break;
+        }
+        isFirstDay = false;
+        d.setDate(d.getDate() - 1);
+      }
+      return streak;
+    }
+
+    // Verifie si la derniere seance prevue (avant aujourd'hui) n'a pas ete validee,
+    // et propose : oubli (validation retroactive) ou seance manquee (streak cassee).
+    async function checkMissedSession(program, workoutDates, profile) {
+      const bannerEl = document.getElementById("missed-banner");
+      bannerEl.innerHTML = "";
+
+      const start = new Date(program.start_date); start.setHours(0, 0, 0, 0);
+      const d = new Date(); d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - 1);
+      while (d >= start && (program.days || [])[(d.getDay() + 6) % 7]?.rest) {
+        d.setDate(d.getDate() - 1);
+      }
+      if (d < start) return;
+
+      const ds = dateStr(d);
+      if (workoutDates.has(ds)) return;
+      if (profile?.missed_checked_until && profile.missed_checked_until >= ds) return;
+
+      const idx = (d.getDay() + 6) % 7;
+      const dayName = (program.days || [])[idx]?.day_name || DAY_NAMES[idx];
+      const dateLabel = d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+      // Notification dans la cloche (une seule fois pour cette date)
+      const notifMsg = `La seance "${dayName}" du ${dateLabel} n'a pas ete validee. Va sur la page Sport pour indiquer si c'est un oubli.`;
+      const { data: existingNotif } = await supabaseClient
+        .from("notifications").select("id").eq("user_id", userId).eq("message", notifMsg).limit(1);
+      if (!existingNotif || existingNotif.length === 0) {
+        await supabaseClient.from("notifications").insert({ user_id: userId, message: notifMsg });
+      }
+
+      bannerEl.innerHTML = `
+        <div class="missed-banner">
+          <div class="missed-banner-text">
+            <strong>⚠️ Seance non validee</strong>
+            <span class="subtitle" style="margin:0;">La seance "${dayName}" du ${dateLabel} n'a pas ete validee. C'etait un oubli, ou tu l'as manquee ?</span>
+          </div>
+          <div class="missed-banner-actions">
+            <button type="button" id="missed-forgot">✓ Je l'ai faite (oubli)</button>
+            <button type="button" class="danger" id="missed-skip">✗ Manquee, reinitialiser la streak</button>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("missed-forgot").addEventListener("click", async () => {
+        await supabaseClient.from("workouts").insert({
+          user_id: userId, date: ds, name: dayName,
+          notes: "Validee retroactivement (oubli de validation)",
+        });
+        await supabaseClient.from("profiles").update({ missed_checked_until: ds }).eq("id", userId);
+        profileData.missed_checked_until = ds;
+        loadProgram(); loadStats(); loadWorkouts();
+      });
+
+      document.getElementById("missed-skip").addEventListener("click", async () => {
+        await supabaseClient.from("profiles").update({ missed_checked_until: ds }).eq("id", userId);
+        profileData.missed_checked_until = ds;
+        await supabaseClient.from("notifications").insert({
+          user_id: userId,
+          message: `Seance "${dayName}" du ${dateLabel} marquee comme manquee : ta streak repart de zero. 💪 On lache rien !`,
+        });
+        loadProgram();
+      });
+    }
+
     async function loadProgram() {
       const { data: program } = await supabaseClient
         .from("training_programs")
@@ -417,12 +505,24 @@
       const weeksRemaining = Math.max(0, program.duration_weeks - weeksElapsed);
       const completed = weeksElapsed >= program.duration_weeks;
 
+      // Toutes les seances depuis le debut du programme (streak + validation)
+      const { data: progWorkouts } = await supabaseClient
+        .from("workouts")
+        .select("date")
+        .eq("user_id", userId)
+        .gte("date", program.start_date);
+      const workoutDates = new Set((progWorkouts || []).map(w => w.date));
+      const streak = computeStreak(program, workoutDates);
+
       statusEl.innerHTML = `
+        <span class="streak-pill" title="Seances validees consecutives">🔥 ${streak} jour${streak > 1 ? "s" : ""}</span>
         <span class="badge" style="background:${completed ? "var(--danger)" : "var(--gradient)"};">
           ${completed ? "Programme termine" : `Semaine ${weeksElapsed + 1} / ${program.duration_weeks}`}
         </span>
         ${completed ? `<div class="subtitle" style="margin-top:6px;">Demande a <a href="coach.html">Aiden</a> un nouveau programme.</div>` : `<div class="subtitle" style="margin-top:6px;">${weeksRemaining} semaine(s) restante(s)</div>`}
       `;
+
+      checkMissedSession(program, workoutDates, profileData);
 
       // Charger les derniers poids/reps utilises pour chaque exercice
       const allExNames = [];
@@ -481,18 +581,25 @@
           }).join("");
         }
         return `
-          <div class="prog-day ${isToday ? "prog-day-today" : ""}">
-            <div class="prog-day-head">
-              <h3 style="margin:0;">${day.day_name || DAY_NAMES[idx]}${isToday ? " · Aujourd'hui" : ""}</h3>
-              ${day.focus ? `<span class="badge">${day.focus}</span>` : ""}
+          <details class="prog-acc ${isToday ? "prog-acc-today" : ""}" ${isToday ? "open" : ""}>
+            <summary>
+              <span class="prog-acc-title">
+                <strong>${day.day_name || DAY_NAMES[idx]}</strong>${isToday ? `<span class="prog-acc-today-tag">Aujourd'hui</span>` : ""}
+              </span>
+              <span class="prog-acc-meta">
+                ${day.focus ? `<span class="badge">${day.focus}</span>` : ""}
+                ${day.rest ? "😴" : (alreadyDone && isToday ? "✅" : "")}
+              </span>
+            </summary>
+            <div class="prog-acc-body">
+              ${exHtml}
+              ${(!day.rest && isToday) ? `
+                <button type="button" class="validate-session-btn" ${alreadyDone ? "disabled" : ""} onclick="confirmWorkoutDay('${(day.day_name || DAY_NAMES[idx]).replace(/'/g,"\\'")}', this)">
+                  ${alreadyDone ? "✓ Seance validee — streak +1 🔥" : "🔥 Valider la seance du jour"}
+                </button>
+              ` : ""}
             </div>
-            ${exHtml}
-            ${(!day.rest && isToday) ? `
-              <button type="button" style="margin-top:10px;" ${alreadyDone ? "disabled" : ""} onclick="confirmWorkoutDay('${(day.day_name || DAY_NAMES[idx]).replace(/'/g,"\\'")}', this)">
-                ${alreadyDone ? "✓ Seance confirmee" : "✓ Confirmer la seance du jour"}
-              </button>
-            ` : ""}
-          </div>
+          </details>
         `;
       }).join("");
     }
@@ -551,7 +658,7 @@
 
     async function confirmWorkoutDay(dayName, btn) {
       btn.disabled = true;
-      btn.textContent = "✓ Seance confirmee";
+      btn.textContent = "✓ Seance validee — streak +1 🔥";
       await supabaseClient.from("workouts").insert({
         user_id: userId,
         date: new Date().toISOString().slice(0, 10),
@@ -560,12 +667,17 @@
       });
       loadStats();
       loadWorkouts();
+      loadProgram(); // met a jour la streak immediatement
     }
 
     (async () => {
       const session = await requireAuthAndRenderNav("sport.html");
       if (!session) return;
       userId = session.user.id;
+
+      const { data: profile } = await supabaseClient
+        .from("profiles").select("missed_checked_until").eq("id", userId).maybeSingle();
+      profileData = profile || {};
 
       tickClock();
       setInterval(tickClock, 1000);
