@@ -62,6 +62,7 @@
       <div class="timer-tabs">
         <button type="button" class="timer-tab active" data-mode="stopwatch" onclick="switchTimerMode('stopwatch')">Chrono</button>
         <button type="button" class="timer-tab" data-mode="interval" onclick="switchTimerMode('interval')">Intervalles</button>
+        <button type="button" class="timer-tab" data-mode="countdown" onclick="switchTimerMode('countdown')">Decompte</button>
       </div>
 
       <div id="stopwatch-panel" class="timer-panel">
@@ -94,6 +95,34 @@
         <div class="timer-controls">
           <button id="iv-start" onclick="ivStart()">Demarrer</button>
           <button class="secondary" onclick="ivReset()">Reinitialiser</button>
+        </div>
+      </div>
+
+      <div id="countdown-panel" class="timer-panel" style="display:none;">
+        <p class="subtitle" style="margin-top:0;">Clique sur une duree pour lancer le decompte directement (ex: pause entre les series). Son + vibration a la fin.</p>
+        <div class="cd-presets">
+          <button type="button" class="secondary" onclick="cdPreset(30)">30 s</button>
+          <button type="button" class="secondary" onclick="cdPreset(60)">1 min</button>
+          <button type="button" class="secondary" onclick="cdPreset(90)">1 min 30</button>
+          <button type="button" class="secondary" onclick="cdPreset(120)">2 min</button>
+          <button type="button" class="secondary" onclick="cdPreset(180)">3 min</button>
+          <button type="button" class="secondary" onclick="cdPreset(300)">5 min</button>
+        </div>
+        <div class="row">
+          <div>
+            <label for="cd-min">Minutes</label>
+            <input type="number" id="cd-min" value="2" min="0" />
+          </div>
+          <div>
+            <label for="cd-sec">Secondes</label>
+            <input type="number" id="cd-sec" value="0" min="0" max="59" />
+          </div>
+        </div>
+        <div class="timer-display" id="cd-display">02:00</div>
+        <div class="timer-phase" id="cd-phase">Pret</div>
+        <div class="timer-controls">
+          <button id="cd-start" onclick="cdStart()">Demarrer</button>
+          <button class="secondary" onclick="cdReset()">Reinitialiser</button>
         </div>
       </div>
     </div>
@@ -202,6 +231,44 @@
       document.getElementById("live-time").textContent = now.toLocaleTimeString("fr-FR");
     }
 
+    // ── SON (Web Audio : fonctionne sur iPhone car cree/repris lors d'un clic) ──
+    let audioCtx = null;
+    function ensureAudio() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+      } catch (e) { /* pas de support audio */ }
+    }
+    function beep(freq, dur, when) {
+      if (!audioCtx) return;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.type = "sine";
+      o.frequency.value = freq;
+      const t = audioCtx.currentTime + (when || 0);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+    function soundTick() { beep(880, 0.12, 0); }
+    function soundPhase() { beep(660, 0.15, 0); beep(880, 0.15, 0.18); }
+    function soundDone() { beep(880, 0.18, 0); beep(880, 0.18, 0.25); beep(1318, 0.45, 0.5); }
+
+    async function notifyTimerDone(message) {
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+      try {
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification("FitFinance AI", { body: message, icon: "/icons/icon-192.png" });
+        }
+      } catch (e) { /* iOS hors PWA : pas de Notification API */ }
+      // Notification dans la cloche de l'app aussi
+      try {
+        await supabaseClient.from("notifications").insert({ user_id: userId, message });
+      } catch (e) {}
+    }
+
     // ── CHRONOMETRE (STOPWATCH) ──
     let swInterval = null, swStartTs = 0, swElapsed = 0, swRunning = false, swLapCount = 0;
     function fmtSw(ms) {
@@ -249,6 +316,7 @@
     // ── MINUTEUR INTERVALLES ──
     let ivInterval = null, ivRunning = false, ivPhase = "work", ivRound = 1, ivRemaining = 0;
     function ivStart() {
+      ensureAudio();
       const btn = document.getElementById("iv-start");
       if (ivRunning) {
         ivRunning = false;
@@ -276,17 +344,20 @@
           if (rest > 0) {
             ivPhase = "rest";
             ivRemaining = rest;
+            soundPhase();
           } else {
             ivRound++;
             if (ivRound > rounds) { ivFinish(); return; }
             ivPhase = "work";
             ivRemaining = work;
+            soundPhase();
           }
         } else {
           ivRound++;
           if (ivRound > rounds) { ivFinish(); return; }
           ivPhase = "work";
           ivRemaining = work;
+          soundPhase();
         }
       }
       ivRender();
@@ -295,9 +366,11 @@
       ivRunning = false;
       clearInterval(ivInterval);
       ivRemaining = 0;
-      document.getElementById("iv-phase").textContent = "Termine !";
+      document.getElementById("iv-phase").textContent = "Termine ! 🔔";
       document.getElementById("iv-display").textContent = "00.0";
       document.getElementById("iv-start").textContent = "Demarrer";
+      soundDone();
+      notifyTimerDone("⏱️ Entrainement par intervalles termine, bravo ! 🥊");
     }
     function ivRender() {
       document.getElementById("iv-display").textContent = ivRemaining.toFixed(1);
@@ -313,11 +386,87 @@
       document.getElementById("iv-display").textContent = ivRemaining.toFixed(1);
       document.getElementById("iv-phase").textContent = "Pret";
     }
+    // ── DECOMPTE (pause entre series, etc.) ──
+    let cdInterval = null, cdRunning = false, cdEndTs = 0, cdRemainMs = 0;
+    function cdTotalMs() {
+      const m = parseInt(document.getElementById("cd-min").value) || 0;
+      const s = parseInt(document.getElementById("cd-sec").value) || 0;
+      return Math.max(1, m * 60 + s) * 1000;
+    }
+    function fmtCd(ms) {
+      const total = Math.max(0, Math.ceil(ms / 1000));
+      return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+    }
+    function cdRender() {
+      document.getElementById("cd-display").textContent = fmtCd(cdRemainMs);
+    }
+    function cdPreset(seconds) {
+      document.getElementById("cd-min").value = Math.floor(seconds / 60);
+      document.getElementById("cd-sec").value = seconds % 60;
+      cdRunning = false;
+      clearInterval(cdInterval);
+      cdRemainMs = 0;
+      document.getElementById("cd-start").textContent = "Demarrer";
+      cdStart(); // lance directement
+    }
+    function cdStart() {
+      ensureAudio();
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+      const btn = document.getElementById("cd-start");
+      if (cdRunning) {
+        cdRunning = false;
+        clearInterval(cdInterval);
+        cdRemainMs = cdEndTs - Date.now();
+        btn.textContent = "Reprendre";
+        document.getElementById("cd-phase").textContent = "En pause";
+        return;
+      }
+      if (cdRemainMs <= 0) cdRemainMs = cdTotalMs();
+      cdEndTs = Date.now() + cdRemainMs;
+      cdRunning = true;
+      btn.textContent = "Pause";
+      document.getElementById("cd-phase").textContent = "Decompte en cours...";
+      cdRender();
+      cdInterval = setInterval(() => {
+        cdRemainMs = cdEndTs - Date.now();
+        // Bips sur les 3 dernieres secondes
+        const secLeft = Math.ceil(cdRemainMs / 1000);
+        if (cdRemainMs > 0 && secLeft <= 3 && cdInterval._lastBeep !== secLeft) {
+          cdInterval._lastBeep = secLeft;
+          soundTick();
+        }
+        if (cdRemainMs <= 0) {
+          cdRunning = false;
+          clearInterval(cdInterval);
+          cdRemainMs = 0;
+          cdRender();
+          document.getElementById("cd-phase").textContent = "Termine ! 🔔";
+          document.getElementById("cd-start").textContent = "Demarrer";
+          soundDone();
+          notifyTimerDone("⏱️ Decompte termine ! C'est reparti 💪");
+          return;
+        }
+        cdRender();
+      }, 200);
+    }
+    function cdReset() {
+      cdRunning = false;
+      clearInterval(cdInterval);
+      cdRemainMs = cdTotalMs();
+      cdRender();
+      document.getElementById("cd-start").textContent = "Demarrer";
+      document.getElementById("cd-phase").textContent = "Pret";
+    }
+
     function switchTimerMode(mode) {
       document.querySelectorAll(".timer-tab").forEach(t => t.classList.toggle("active", t.dataset.mode === mode));
       document.getElementById("stopwatch-panel").style.display = mode === "stopwatch" ? "block" : "none";
       document.getElementById("interval-panel").style.display = mode === "interval" ? "block" : "none";
+      document.getElementById("countdown-panel").style.display = mode === "countdown" ? "block" : "none";
       if (mode === "interval") ivReset();
+      if (mode === "countdown") cdReset();
     }
 
     // ── DONNEES ──
@@ -623,7 +772,7 @@
     async function loadRecords() {
       const { data } = await supabaseClient
         .from("exercise_logs")
-        .select("exercise_name, weight_kg, reps, date")
+        .select("id, exercise_name, weight_kg, reps, date")
         .eq("user_id", userId)
         .not("weight_kg", "is", null)
         .order("weight_kg", { ascending: false });
@@ -647,6 +796,7 @@
         <div class="records-grid">
           ${records.map(r => `
             <div class="record-card">
+              <button type="button" class="record-del" data-del-record="${r.id}" title="Supprimer ce record">✕</button>
               <div class="record-name">${r.exercise_name}</div>
               <div class="record-value">${Number(r.weight_kg)} kg</div>
               <div class="subtitle" style="margin:0;">${r.reps ? `${r.reps} reps · ` : ""}${fmtDate(r.date)}</div>
@@ -654,6 +804,15 @@
           `).join("")}
         </div>
       `;
+
+      el.querySelectorAll("[data-del-record]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Supprimer ce record ? (le record precedent sur cet exercice reprendra sa place)")) return;
+          await supabaseClient.from("exercise_logs").delete().eq("id", btn.dataset.delRecord);
+          loadRecords();
+          loadProgram();
+        });
+      });
     }
 
     async function confirmWorkoutDay(dayName, btn) {
