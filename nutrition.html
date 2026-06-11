@@ -291,6 +291,15 @@
         return;
       }
 
+      document.getElementById("shopping-summary").insertAdjacentHTML("beforeend", `
+        <button type="button" class="danger" id="clear-shopping-btn" style="margin-top:10px;">🗑️ Vider la liste de courses</button>
+      `);
+      document.getElementById("clear-shopping-btn").addEventListener("click", async () => {
+        if (!confirm("Supprimer tous les articles de la liste de courses ?")) return;
+        await supabaseClient.from("shopping_list_items").delete().eq("user_id", userId);
+        loadShoppingList();
+      });
+
       const byCategory = {};
       list.forEach(i => {
         const cat = i.category || "Autres";
@@ -337,12 +346,21 @@
             <div class="plan-meta">
               <span class="badge">${p.goal || "Plan alimentaire"}</span>
               <span class="subtitle">${fmtDate(p.created_at)}</span>
+              <button type="button" class="danger" style="margin-left:auto;" data-del-plan="${p.id}">Supprimer</button>
             </div>
             ${p.title ? `<h3 style="margin-top:0;">${p.title}</h3>` : ""}
             <div class="markdown-content">${renderMarkdown(typeof p.content === "string" ? p.content : JSON.stringify(p.content, null, 2))}</div>
           </div>
         `).join("")
         : `<p class="subtitle">Aucun plan alimentaire genere pour le moment.</p>`;
+
+      document.querySelectorAll("[data-del-plan]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Supprimer ce plan alimentaire ?")) return;
+          await supabaseClient.from("meal_plans").delete().eq("id", btn.dataset.delPlan);
+          loadPlans();
+        });
+      });
     }
 
     (async () => {
