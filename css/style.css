@@ -686,8 +686,10 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
 .prog-acc-body { padding: 0 16px 16px; }
 .prog-acc-today {
   border: 1px solid transparent;
+  /* Fond opaque sombre obligatoire : avec un fond translucide, le degrade de la
+     bordure (border-box) transparait derriere le contenu et rend le texte illisible. */
   background:
-    linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
+    linear-gradient(#141625, #141625) padding-box,
     var(--gradient) border-box;
 }
 .prog-acc-today summary::after { color: var(--text); }
