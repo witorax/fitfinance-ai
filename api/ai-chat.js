@@ -1084,25 +1084,6 @@ module.exports = async (req, res) => {
       finalText = "Desole, je n'ai pas pu generer de reponse. Peux-tu reformuler ta demande ?";
     }
 
-    // Bloc de debug temporaire (toujours affiche) : resultats bruts des outils de
-    // sauvegarde + verification directe en base, independamment de ce que dit le modele.
-    {
-      const { count: progCount } = await supabase
-        .from("training_programs").select("id", { count: "exact", head: true })
-        .eq("user_id", userId).eq("active", true);
-      const { count: shopCount } = await supabase
-        .from("shopping_list_items").select("id", { count: "exact", head: true })
-        .eq("user_id", userId);
-      finalText += "\n\n---\n🔧 **Debug serveur (v2026-06-10b)**\n```json\n" +
-        JSON.stringify({
-          outils_sauvegarde_appeles_ce_tour: debugLog,
-          verification_base: {
-            programmes_actifs: progCount ?? 0,
-            articles_liste_courses: shopCount ?? 0,
-          },
-        }, null, 2) + "\n```";
-    }
-
     // Sauvegarde de l'historique de conversation
     if (lastUserMessage) {
       await supabase.from("ai_messages").insert([
